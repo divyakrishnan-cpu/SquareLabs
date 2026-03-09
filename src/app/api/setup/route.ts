@@ -4,12 +4,24 @@ import bcrypt from "bcryptjs";
 
 export async function GET() {
   try {
+    // Test DB connection first
+    await db.$connect();
+
     // Check if already seeded
     const existing = await db.user.findUnique({
       where: { email: "divya.krishnan@squareyards.com" },
     });
 
     if (existing) {
+      // Update password in case it was missing
+      if (!existing.password) {
+        const hashed = await bcrypt.hash("squarelabs2026", 10);
+        await db.user.update({
+          where: { email: "divya.krishnan@squareyards.com" },
+          data: { password: hashed },
+        });
+        return NextResponse.json({ message: "Password updated. You can now log in!" });
+      }
       return NextResponse.json({ message: "Already set up. You can log in!", alreadyExists: true });
     }
 
@@ -36,10 +48,17 @@ export async function GET() {
     });
 
     return NextResponse.json({
-      message: "Setup complete! You can now log in.",
-      user: { name: divya.name, email: divya.email, role: divya.role },
+      message: "✅ Setup complete! You can now log in.",
+      credentials: {
+        email: divya.email,
+        password: "squarelabs2026",
+        role: divya.role,
+      },
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({
+      error: e.message,
+      hint: "Database tables may not exist yet. Make sure the build command includes: npx prisma db push",
+    }, { status: 500 });
   }
 }
