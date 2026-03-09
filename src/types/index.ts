@@ -104,6 +104,7 @@ export interface ContentCalendarItem {
   status: CalendarItemStatus;
   delayReason?: DelayReason;
   delayNote?: string;
+  rescheduledFrom?: string;
   videoUrl?: string;
   caption?: string;
   instagramLink?: string;
