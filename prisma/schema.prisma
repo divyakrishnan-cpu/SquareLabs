@@ -92,8 +92,21 @@ model Team {
 
 // ── Tasks ──────────────────────────────────────────────────────────────────
 
-enum TaskPriority  { LOW MEDIUM HIGH URGENT }
-enum TaskStatus    { TODO IN_PROGRESS IN_REVIEW APPROVED DONE CANCELLED }
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  APPROVED
+  DONE
+  CANCELLED
+}
 
 model Task {
   id          String       @id @default(cuid())
@@ -267,6 +280,7 @@ model ContentCalendarItem {
 
   assignedTo       User?              @relation(fields: [assignedToId], references: [id])
   script           ContentScript?
+  notifications    PublishNotification[]
 
   @@map("content_calendar_items")
 }
@@ -314,6 +328,8 @@ model PublishNotification {
   message        String    @db.Text
   success        Boolean   @default(true)
   error          String?
+
+  calendarItem   ContentCalendarItem @relation(fields: [calendarItemId], references: [id])
 
   @@map("publish_notifications")
 }

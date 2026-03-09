@@ -11,8 +11,8 @@ export async function GET(req: NextRequest) {
 
   try {
     const snapshots = await db.socialMetricSnapshot.findMany({
-      where: { vertical: vertical as any, snapshotDate: { gte: since } },
-      orderBy: { snapshotDate: "asc" },
+      where: { vertical: vertical as any, date: { gte: since } },
+      orderBy: { date: "asc" },
     });
     return NextResponse.json({ snapshots });
   } catch (e) {
