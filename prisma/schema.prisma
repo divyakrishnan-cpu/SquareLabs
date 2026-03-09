@@ -1,0 +1,319 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Auth ───────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole  @default(TEAM_MEMBER)
+  teamId        String?
+  team          Team?     @relation(fields: [teamId], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  tasks         Task[]    @relation("AssignedTasks")
+  calendarItems ContentCalendarItem[]
+  scripts       ContentScript[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ── Teams ──────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  HEAD_OF_MARKETING
+  TEAM_LEAD
+  TEAM_MEMBER
+  HR_VIEWER
+}
+
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+
+  members     User[]
+  tasks       Task[]
+
+  @@map("teams")
+}
+
+// ── Tasks ──────────────────────────────────────────────────────────────────
+
+enum TaskPriority  { LOW MEDIUM HIGH URGENT }
+enum TaskStatus    { TODO IN_PROGRESS IN_REVIEW APPROVED DONE CANCELLED }
+
+model Task {
+  id          String       @id @default(cuid())
+  title       String
+  description String?      @db.Text
+  priority    TaskPriority @default(MEDIUM)
+  status      TaskStatus   @default(TODO)
+  dueDate     DateTime?
+  teamId      String
+  assigneeId  String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  team        Team         @relation(fields: [teamId], references: [id])
+  assignee    User?        @relation("AssignedTasks", fields: [assigneeId], references: [id])
+
+  @@map("tasks")
+}
+
+// ── Social Media — Verticals & Platforms ──────────────────────────────────
+
+enum Vertical {
+  SY_INDIA
+  SY_UAE
+  INTERIOR
+  SQUARE_CONNECT
+  UM
+}
+
+enum SocialPlatform {
+  INSTAGRAM
+  FACEBOOK
+  LINKEDIN
+  YOUTUBE
+  TWITTER
+  PINTEREST
+}
+
+// ── SM-01: Social Metrics (daily snapshot per vertical + platform) ─────────
+
+model SocialMetricSnapshot {
+  id               String         @id @default(cuid())
+  vertical         Vertical
+  platform         SocialPlatform
+  date             DateTime       @db.Date
+  followers        Int            @default(0)
+  follows          Int            @default(0)  // gained that day
+  unfollows        Int            @default(0)  // lost that day
+  netFollowers     Int            @default(0)
+  views            Int            @default(0)
+  reach            Int            @default(0)
+  impressions      Int            @default(0)
+  interactions     Int            @default(0)  // likes+comments+shares+saves
+  linkClicks       Int            @default(0)
+  profileVisits    Int            @default(0)
+  totalContacts    Int            @default(0)
+  postsPublished   Int            @default(0)
+  videosPublished  Int            @default(0)
+  staticsPublished Int            @default(0)
+  createdAt        DateTime       @default(now())
+
+  @@unique([vertical, platform, date])
+  @@map("social_metric_snapshots")
+}
+
+// ── SM-02: Competitor Configuration ───────────────────────────────────────
+
+model Competitor {
+  id        String         @id @default(cuid())
+  vertical  Vertical
+  name      String
+  platform  SocialPlatform
+  handle    String
+  profileUrl String?
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+
+  snapshots CompetitorSnapshot[]
+
+  @@map("competitors")
+}
+
+model CompetitorSnapshot {
+  id           String     @id @default(cuid())
+  competitorId String
+  date         DateTime   @db.Date
+  followers    Int        @default(0)
+  postsCount   Int        @default(0)
+  avgEngRate   Float      @default(0)
+  topThemes    Json?      // string[]
+  createdAt    DateTime   @default(now())
+
+  competitor   Competitor @relation(fields: [competitorId], references: [id])
+
+  @@unique([competitorId, date])
+  @@map("competitor_snapshots")
+}
+
+// ── SM-02: Content Calendar (AI planned) ──────────────────────────────────
+
+enum CalendarItemStatus {
+  PLANNED
+  SCRIPT_IN_PROGRESS
+  SCRIPT_READY
+  VIDEO_UPLOADED
+  SCHEDULED
+  PUBLISHED
+  DELAYED
+  RESCHEDULED
+  CANCELLED
+}
+
+enum ContentType {
+  REEL
+  CAROUSEL
+  STATIC
+  STORY
+  YOUTUBE_VIDEO
+  SHORT
+}
+
+enum ContentCategory {
+  LISTING
+  EDUCATION
+  BRAND
+  TESTIMONIAL
+  FESTIVE
+  MARKET_UPDATE
+  TIPS
+  BEHIND_SCENES
+}
+
+enum DelayReason {
+  SHOOT_PENDING
+  SHOOT_DELAYED
+  EDIT_DELAYED
+  APPROVAL_PENDING
+  CREATIVE_NOT_READY
+  TALENT_UNAVAILABLE
+  TECHNICAL_ISSUE
+  STRATEGY_CHANGE
+  OTHER
+}
+
+model ContentCalendarItem {
+  id               String             @id @default(cuid())
+  vertical         Vertical
+  platforms        SocialPlatform[]
+  contentType      ContentType
+  category         ContentCategory
+  title            String
+  hook             String?            @db.Text
+  topic            String?            @db.Text
+  assignedToId     String?
+  plannedDate      DateTime
+  scheduledAt      DateTime?
+  publishedAt      DateTime?
+  status           CalendarItemStatus @default(PLANNED)
+  delayReason      DelayReason?
+  delayNote        String?
+  rescheduledFrom  DateTime?
+  videoUrl         String?
+  caption          String?            @db.Text
+  instagramLink    String?
+  youtubeLink      String?
+  linkedinLink     String?
+  facebookLink     String?
+  aiConfidence     Float?             // 0-1 score from AI planner
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  assignedTo       User?              @relation(fields: [assignedToId], references: [id])
+  script           ContentScript?
+
+  @@map("content_calendar_items")
+}
+
+// ── SM-03: Content Scripts ─────────────────────────────────────────────────
+
+enum ScriptStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  REJECTED
+}
+
+model ContentScript {
+  id             String       @id @default(cuid())
+  calendarItemId String       @unique
+  version        Int          @default(1)
+  status         ScriptStatus @default(DRAFT)
+  hook           String?      @db.Text
+  body           String?      @db.Text
+  cta            String?      @db.Text
+  captionInsta   String?      @db.Text
+  captionLinkedin String?     @db.Text
+  captionYoutube  String?     @db.Text
+  estimatedDuration Int?      // seconds
+  aiGenerated    Boolean      @default(false)
+  authorId       String?
+  notes          String?      @db.Text
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  calendarItem   ContentCalendarItem @relation(fields: [calendarItemId], references: [id])
+  author         User?               @relation(fields: [authorId], references: [id])
+
+  @@map("content_scripts")
+}
+
+// ── SM-05: Publish Notifications ──────────────────────────────────────────
+
+model PublishNotification {
+  id             String    @id @default(cuid())
+  calendarItemId String
+  sentAt         DateTime  @default(now())
+  channels       String[]  // SLACK, WHATSAPP, EMAIL, IN_APP
+  message        String    @db.Text
+  success        Boolean   @default(true)
+  error          String?
+
+  @@map("publish_notifications")
+}
