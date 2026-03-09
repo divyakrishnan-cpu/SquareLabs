@@ -32,12 +32,20 @@ const MOCK_NOTIFICATIONS = [
   },
 ];
 
+type NotifLinks = {
+  instagram?: string;
+  youtube?: string;
+  linkedin?: string;
+  facebook?: string;
+};
+
 function NotificationPreview({ notif }: { notif: (typeof MOCK_NOTIFICATIONS)[0] }) {
+  const links = notif.links as NotifLinks;
   const linkStr = [
-    notif.links.instagram ? `Insta: ${notif.links.instagram}` : null,
-    notif.links.youtube   ? `YouTube: ${notif.links.youtube}` : null,
-    notif.links.linkedin  ? `LinkedIn: ${notif.links.linkedin}` : null,
-    notif.links.facebook  ? `FB: ${(notif.links as any).facebook}` : null,
+    links.instagram ? `Insta: ${links.instagram}` : null,
+    links.youtube   ? `YouTube: ${links.youtube}` : null,
+    links.linkedin  ? `LinkedIn: ${links.linkedin}` : null,
+    links.facebook  ? `FB: ${links.facebook}` : null,
   ].filter(Boolean).join("  ");
 
   return (
