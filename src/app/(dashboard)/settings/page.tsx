@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useSearchParams }                  from "next/navigation";
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { useSearchParams }                            from "next/navigation";
 import { Header }   from "@/components/layout/Header";
 import { Card }     from "@/components/ui/Card";
 import {
@@ -107,9 +107,9 @@ function tokenDaysLeft(expiresAt: string | null) {
   return days;
 }
 
-// ── Component ─────────────────────────────────────────────────────────────
+// ── Inner component (uses useSearchParams — must be inside Suspense) ───────
 
-export default function SettingsPage() {
+function SettingsInner() {
   const searchParams = useSearchParams();
   const [activeTab,      setActiveTab]     = useState<"integrations" | "accounts" | "sync">("integrations");
   const [metaAccounts,   setMetaAccounts]  = useState<MetaAccount[]>([]);
@@ -677,5 +677,17 @@ export default function SettingsPage() {
         </div>
       )}
     </>
+  );
+}
+
+// ── Default export — wraps inner component in Suspense ────────────────────
+// Required because SettingsInner calls useSearchParams() which opts out of
+// static prerendering and needs a Suspense boundary in Next.js 14.
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsInner />
+    </Suspense>
   );
 }
