@@ -2,11 +2,10 @@
 
 import { useState } from "react";
 import { Header } from "@/components/layout/Header";
-import { Card, MetricCard, SectionHeader } from "@/components/ui/Card";
+import { Card, SectionHeader } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Cell, PieChart, Pie,
 } from "recharts";
 import { TrendingUp, TrendingDown, CheckCircle2, XCircle, Users, Eye, Heart, MousePointer } from "lucide-react";
 import { cn } from "@/lib/utils";
