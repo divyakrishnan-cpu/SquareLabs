@@ -20,6 +20,38 @@ const SCOPES = [
   "pages_show_list",
 ].join(",");
 
+// ── Brand / Vertical auto-detection ──────────────────────────────────────
+//
+// When Meta returns Facebook Page names, we map them to our internal
+// Vertical enum so accounts are tagged automatically — no manual selection.
+
+export type Vertical = "SY_INDIA" | "SY_UAE" | "INTERIOR" | "SQUARE_CONNECT" | "UM";
+
+export function detectVerticalFromPageName(pageName: string): Vertical | null {
+  const name = pageName.toLowerCase();
+
+  // Square Yards UAE / Dubai / International
+  if ((name.includes("square yards") || name.includes("squareyards")) &&
+      (name.includes("uae") || name.includes("dubai") || name.includes("international"))) {
+    return "SY_UAE";
+  }
+
+  // Interior Company
+  if (name.includes("interior")) return "INTERIOR";
+
+  // Square Connect
+  if (name.includes("square connect") || name.includes("squareconnect")) return "SQUARE_CONNECT";
+
+  // Urban Money / UM
+  if (name.includes("urban money") || name.includes("urbanmoney") ||
+      /\bum\b/.test(name)) return "UM";
+
+  // Square Yards India (catch-all for Square Yards after UAE excluded above)
+  if (name.includes("square yards") || name.includes("squareyards")) return "SY_INDIA";
+
+  return null;
+}
+
 // ── OAuth URL builder ─────────────────────────────────────────────────────
 
 export function getMetaAuthUrl(state: string): string {

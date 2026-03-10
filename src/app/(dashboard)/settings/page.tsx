@@ -115,6 +115,7 @@ function SettingsInner() {
   const [metaAccounts,   setMetaAccounts]  = useState<MetaAccount[]>([]);
   const [loadingMeta,    setLoadingMeta]   = useState(true);
   const [disconnecting,  setDisconnecting] = useState<string | null>(null);
+  const [showSteps,      setShowSteps]     = useState(false);
 
   // Sync data state
   const [syncAccount,    setSyncAccount]   = useState<MetaAccount | null>(null);
@@ -128,6 +129,7 @@ function SettingsInner() {
   const successFlag = searchParams.get("success");
   const errorFlag   = searchParams.get("error");
   const pagesCount  = searchParams.get("pages");
+  const igCount     = searchParams.get("ig");
 
   // ── Fetch connected Meta accounts ────────────────────────────────────────
 
@@ -209,9 +211,15 @@ function SettingsInner() {
 
       {/* OAuth result banners */}
       {successFlag === "meta_connected" && (
-        <div className="mt-4 bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-center gap-3 text-sm text-green-700">
-          <CheckCircle2 size={16} className="shrink-0"/>
-          Successfully connected {pagesCount ?? ""} Facebook Page(s) + Instagram Business Account(s) to SquareLabs.
+        <div className="mt-4 bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-start gap-3 text-sm text-green-700">
+          <CheckCircle2 size={16} className="shrink-0 mt-0.5"/>
+          <div>
+            <p className="font-semibold">All brands connected successfully!</p>
+            <p className="text-xs text-green-600 mt-0.5">
+              {pagesCount ?? "0"} Facebook Pages and {igCount ?? "0"} Instagram Business Accounts are now synced.
+              Their data is available in the <strong>Synced Data</strong> tab below.
+            </p>
+          </div>
         </div>
       )}
       {errorFlag && (
@@ -252,6 +260,8 @@ function SettingsInner() {
                 📸
               </div>
               <div className="flex-1 min-w-0">
+
+                {/* Header row */}
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <h3 className="font-semibold text-gray-900 text-sm">Instagram &amp; Facebook</h3>
                   {loadingMeta ? (
@@ -260,7 +270,7 @@ function SettingsInner() {
                     </span>
                   ) : hasMetaAccounts ? (
                     <span className="flex items-center gap-1 text-[10px] font-medium text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
-                      <CheckCircle2 size={9}/> {metaAccounts.length} account{metaAccounts.length > 1 ? "s" : ""} connected
+                      <CheckCircle2 size={9}/> {metaAccounts.length} page{metaAccounts.length > 1 ? "s" : ""} connected
                     </span>
                   ) : (
                     <span className="flex items-center gap-1 text-[10px] font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
@@ -268,96 +278,138 @@ function SettingsInner() {
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-gray-500 mb-3">
-                  Connect via Meta&apos;s official Graph API to retrieve followers, reach, impressions, post performance, audience demographics, and story metrics in real time.
+
+                <p className="text-xs text-gray-500 mb-4">
+                  One click connects <strong>all brands</strong> under your Square Yards Business Portfolio —
+                  Square Yards, Interior Company, Square Connect, Urban Money and more.
+                  SquareLabs auto-detects each brand from the Page name.
                 </p>
 
-                {/* Connected accounts list */}
+                {/* ── Connected: show pages grouped by brand ── */}
                 {!loadingMeta && hasMetaAccounts && (
-                  <div className="mb-4 space-y-2">
-                    {metaAccounts.map(acc => {
-                      const days = tokenDaysLeft(acc.tokenExpiresAt);
-                      const expiringSoon = days !== null && days < 7;
-                      return (
-                        <div key={acc.id}
-                          className="flex items-center gap-3 bg-gray-50 rounded-xl p-3 border border-gray-100">
-                          {acc.profilePictureUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={acc.profilePictureUrl} alt={acc.instagramHandle ?? ""}
-                              className="w-8 h-8 rounded-full object-cover border border-gray-200"/>
-                          ) : (
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center text-white text-xs font-bold">
-                              {(acc.instagramHandle ?? acc.pageName ?? "?")[0].toUpperCase()}
+                  <div className="mb-4">
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Connected Pages</p>
+                    <div className="space-y-2">
+                      {metaAccounts.map(acc => {
+                        const days         = tokenDaysLeft(acc.tokenExpiresAt);
+                        const expiringSoon = days !== null && days < 7;
+                        const brandLabel   = acc.vertical ? (VERTICAL_LABELS[acc.vertical] ?? acc.vertical) : "Other";
+                        return (
+                          <div key={acc.id}
+                            className="flex items-center gap-3 bg-gray-50 rounded-xl p-3 border border-gray-100">
+                            {/* Avatar */}
+                            {acc.profilePictureUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={acc.profilePictureUrl} alt={acc.instagramHandle ?? ""}
+                                className="w-9 h-9 rounded-full object-cover border border-gray-200 shrink-0"/>
+                            ) : (
+                              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                                {(acc.instagramHandle ?? acc.pageName ?? "?")[0].toUpperCase()}
+                              </div>
+                            )}
+
+                            {/* Info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="text-xs font-semibold text-gray-800">
+                                  {acc.instagramHandle ? `@${acc.instagramHandle}` : acc.pageName}
+                                </p>
+                                <span className="text-[10px] bg-accent-50 text-accent-700 px-1.5 py-0.5 rounded-full font-medium">
+                                  {brandLabel}
+                                </span>
+                                {expiringSoon && (
+                                  <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                                    <AlertTriangle size={8}/> Token expires {days}d
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                                {acc.pageName && acc.instagramHandle && (
+                                  <span className="text-[10px] text-gray-400">FB: {acc.pageName}</span>
+                                )}
+                                {acc.followersCount != null && (
+                                  <span className="text-[10px] text-gray-500 flex items-center gap-0.5">
+                                    <Users size={8}/> {acc.followersCount.toLocaleString()} followers
+                                  </span>
+                                )}
+                                {!acc.instagramAccountId && (
+                                  <span className="text-[10px] text-gray-400 italic">No IG Business account linked</span>
+                                )}
+                              </div>
                             </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-gray-800 truncate">
-                              {acc.instagramHandle ? `@${acc.instagramHandle}` : acc.pageName}
-                            </p>
-                            <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                              {acc.pageName && (
-                                <span className="text-[10px] text-gray-400">FB: {acc.pageName}</span>
+
+                            {/* Actions */}
+                            <div className="flex gap-1.5 shrink-0">
+                              {acc.instagramAccountId && (
+                                <button
+                                  onClick={() => { setActiveTab("sync"); loadSyncData(acc); }}
+                                  className="text-[10px] text-accent-600 border border-accent-200 px-2 py-1 rounded-lg hover:bg-accent-50 flex items-center gap-1">
+                                  <TrendingUp size={9}/> Data
+                                </button>
                               )}
-                              {acc.followersCount != null && (
-                                <span className="text-[10px] text-gray-500 flex items-center gap-0.5">
-                                  <Users size={8}/> {acc.followersCount.toLocaleString()} followers
-                                </span>
-                              )}
-                              {acc.vertical && (
-                                <span className="text-[10px] text-accent-600 bg-accent-50 px-1.5 py-0.5 rounded-full">
-                                  {VERTICAL_LABELS[acc.vertical] ?? acc.vertical}
-                                </span>
-                              )}
-                              {expiringSoon && (
-                                <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full flex items-center gap-1">
-                                  <AlertTriangle size={8}/> Token expires in {days}d
-                                </span>
-                              )}
+                              <button
+                                onClick={() => disconnect(acc.pageId)}
+                                disabled={disconnecting === acc.pageId}
+                                className="text-[10px] text-red-500 border border-red-200 px-2 py-1 rounded-lg hover:bg-red-50 disabled:opacity-50">
+                                {disconnecting === acc.pageId ? <Loader2 size={9} className="animate-spin"/> : "Remove"}
+                              </button>
                             </div>
                           </div>
-                          <div className="flex gap-1.5 shrink-0">
-                            <button
-                              onClick={() => { setActiveTab("sync"); loadSyncData(acc); }}
-                              className="text-[10px] text-accent-600 border border-accent-200 px-2 py-1 rounded-lg hover:bg-accent-50 flex items-center gap-1">
-                              <TrendingUp size={9}/> View data
-                            </button>
-                            <button
-                              onClick={() => disconnect(acc.pageId)}
-                              disabled={disconnecting === acc.pageId}
-                              className="text-[10px] text-red-500 border border-red-200 px-2 py-1 rounded-lg hover:bg-red-50 disabled:opacity-50">
-                              {disconnecting === acc.pageId ? <Loader2 size={9} className="animate-spin"/> : "Disconnect"}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
-                {/* Connect / Reconnect button */}
-                <div className="flex gap-2 flex-wrap">
+                {/* ── How-to guide (collapsible) ── */}
+                {!hasMetaAccounts && !loadingMeta && (
+                  <div className="mb-4 bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800">
+                    <p className="font-semibold mb-1">⚡ Quick setup (3 steps):</p>
+                    <p className="mb-0.5">1. Make sure <code className="bg-amber-100 px-1 rounded">META_APP_ID</code> &amp; <code className="bg-amber-100 px-1 rounded">META_APP_SECRET</code> are in Vercel env vars.</p>
+                    <p className="mb-0.5">2. In your Meta App → Facebook Login → Settings, add redirect URI: <code className="bg-amber-100 px-1 rounded text-[10px]">https://square-labs.vercel.app/api/meta/callback</code></p>
+                    <p>3. Click the button below and when Facebook asks which pages to share — <strong>select ALL pages</strong> from your Square Yards portfolio.</p>
+                  </div>
+                )}
+
+                {/* ── Important: Select ALL pages note ── */}
+                {!loadingMeta && (
+                  <div className="mb-3 bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-700">
+                    <p className="font-semibold flex items-center gap-1.5 mb-1">
+                      💡 When the Facebook dialog opens:
+                    </p>
+                    <p>
+                      Facebook will ask <em>"Which pages do you want to share?"</em> — click{" "}
+                      <strong className="text-blue-800">"Select all Pages"</strong> or manually tick every brand page
+                      (Square Yards India, Square Yards UAE, Interior Company, Square Connect, Urban Money, etc.).
+                      All selected pages are stored in one connection — you won&apos;t need to reconnect per brand.
+                    </p>
+                  </div>
+                )}
+
+                {/* ── Connect / Reconnect button ── */}
+                <div className="flex gap-2 flex-wrap items-center">
                   <a href="/api/meta/connect"
-                    className="inline-flex items-center gap-1.5 text-[11px] bg-gradient-to-r from-pink-500 to-purple-600 text-white px-3 py-1.5 rounded-lg hover:opacity-90 font-medium">
-                    <Plus size={10}/>
-                    {hasMetaAccounts ? "Add another account" : "Connect Instagram & Facebook"}
+                    className="inline-flex items-center gap-2 text-[11px] bg-gradient-to-r from-pink-500 to-purple-600 text-white px-4 py-2 rounded-lg hover:opacity-90 font-semibold shadow-sm">
+                    {hasMetaAccounts ? (
+                      <><RefreshCw size={11}/> Reconnect All Brands</>
+                    ) : (
+                      <><Plus size={11}/> Connect All Brands — Square Yards Portfolio</>
+                    )}
                   </a>
                   {hasMetaAccounts && (
                     <button onClick={fetchMetaAccounts}
-                      className="inline-flex items-center gap-1.5 text-[11px] border border-gray-200 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50">
+                      className="inline-flex items-center gap-1.5 text-[11px] border border-gray-200 text-gray-600 px-3 py-2 rounded-lg hover:bg-gray-50">
                       <RefreshCw size={10}/> Refresh
                     </button>
                   )}
                 </div>
 
-                {/* Setup hint when not connected */}
-                {!hasMetaAccounts && !loadingMeta && (
-                  <div className="mt-3 bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-700 space-y-1">
-                    <p className="font-semibold">Before connecting, you need:</p>
-                    <p>1. A Meta App at <a href="https://developers.facebook.com" target="_blank" rel="noreferrer" className="underline">developers.facebook.com</a> (type: Business)</p>
-                    <p>2. Add <code className="bg-blue-100 px-1 rounded">META_APP_ID</code> and <code className="bg-blue-100 px-1 rounded">META_APP_SECRET</code> to Vercel env vars</p>
-                    <p>3. Set the OAuth redirect URI in Meta App → Facebook Login → Settings: <code className="bg-blue-100 px-1 rounded">https://square-labs.vercel.app/api/meta/callback</code></p>
-                  </div>
+                {hasMetaAccounts && (
+                  <p className="text-[10px] text-gray-400 mt-2">
+                    Token lasts 60 days. Click &quot;Reconnect All Brands&quot; before expiry to renew.
+                  </p>
                 )}
+
               </div>
             </div>
           </Card>
