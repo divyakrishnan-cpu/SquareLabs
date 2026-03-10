@@ -1,5 +1,7 @@
 export { default } from "next-auth/middleware";
 
 export const config = {
-  matcher: ["/((?!api/auth|api/setup|_next/static|_next/image|favicon.ico|login).*)"],
+  // api/meta/callback must be public — the browser arrives here from
+  // Facebook's redirect before a session cookie is re-established.
+  matcher: ["/((?!api/auth|api/setup|api/meta/callback|_next/static|_next/image|favicon.ico|login).*)"],
 };
