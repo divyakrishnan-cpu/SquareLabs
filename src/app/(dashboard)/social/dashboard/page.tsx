@@ -196,7 +196,7 @@ export default function SocialDashboardPage() {
       <div className="flex flex-wrap items-center gap-3 mt-4">
         <Select
           value={vertical}
-          onChange={e => setVertical(e.target.value)}
+          onChange={v => setVertical(v)}
           options={VERTICALS}
           className="w-52"
         />

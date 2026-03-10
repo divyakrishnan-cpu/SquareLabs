@@ -120,8 +120,8 @@ export default function ContentManagementPage() {
 
       {/* Filters */}
       <div className="flex gap-3 mt-5">
-        <Select value={vertical} onChange={e => setVertical(e.target.value)} options={VERTICALS} className="w-48" />
-        <Select value={status}   onChange={e => setStatus(e.target.value)}   options={STATUS_OPTIONS} className="w-44" />
+        <Select value={vertical} onChange={v => setVertical(v)} options={VERTICALS} className="w-48" />
+        <Select value={status}   onChange={v => setStatus(v)}   options={STATUS_OPTIONS} className="w-44" />
       </div>
 
       {/* Table */}

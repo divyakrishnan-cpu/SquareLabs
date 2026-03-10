@@ -99,8 +99,8 @@ export default function ORMPage() {
 
       {/* Filters */}
       <div className="flex gap-3 mt-5">
-        <Select value={platform}  onChange={e => setPlatform(e.target.value)}  options={PLATFORMS}  className="w-44" />
-        <Select value={sentiment} onChange={e => setSentiment(e.target.value)} options={SENTIMENTS} className="w-40" />
+        <Select value={platform}  onChange={v => setPlatform(v)}  options={PLATFORMS}  className="w-44" />
+        <Select value={sentiment} onChange={v => setSentiment(v)} options={SENTIMENTS} className="w-40" />
       </div>
 
       {/* Comments */}
