@@ -15,11 +15,9 @@ const NAV = [
     label: "Social",
     icon: Share2,
     children: [
-      { label: "Dashboard",           href: "/social/dashboard", icon: BarChart2 },
-      { label: "Content Management",  href: "/social/content",   icon: FileText },
-      { label: "ORM",                 href: "/social/orm",       icon: MessageSquare },
-      { label: "AI Content Calendar", href: "/social/calendar",  icon: CalendarDays },
-      { label: "Script Creator",      href: "/social/scripts",   icon: PenTool },
+      { label: "Dashboard",          href: "/social/dashboard", icon: BarChart2 },
+      { label: "Content Calendar",   href: "/social/calendar",  icon: CalendarDays },
+      { label: "ORM",                href: "/social/orm",       icon: MessageSquare },
     ],
   },
 ];
