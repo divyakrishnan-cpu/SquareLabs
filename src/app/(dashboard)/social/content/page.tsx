@@ -52,14 +52,33 @@ const DELAY_REASONS = [
   "Other",
 ];
 
+const SERIES_MAP: Record<string, { name: string; emoji: string; color: string }> = {
+  s1: { name: "She Leads",       emoji: "👩‍💼", color: "#ec4899" },
+  s2: { name: "Ghar Wapsi",      emoji: "🏡",  color: "#f97316" },
+  s3: { name: "Market Mondays",  emoji: "📊",  color: "#2563eb" },
+  s4: { name: "Dubai Decoded",   emoji: "🌆",  color: "#0891b2" },
+  s5: { name: "Design Diaries",  emoji: "🎨",  color: "#7c3aed" },
+};
+
 const MOCK_ITEMS = [
-  { id:"c1", title:"Pune Real Estate Market Report Q1 2026", vertical:"SY India", platforms:["IG","YT","LI"], type:"Reel", plannedDate:"5 Mar 2026", status:"PUBLISHED", assignee:"Rahul V", instagramLink:"https://instagram.com/p/abc", youtubeLink:"https://youtube.com/watch?v=xyz", linkedinLink:"https://linkedin.com/post/def" },
-  { id:"c2", title:"Top 5 Dubai Investment Hotspots 2026", vertical:"SY UAE", platforms:["IG","LI"], type:"Carousel", plannedDate:"8 Mar 2026", status:"DELAYED", assignee:"Sneha R", delayReason:"Delayed due to editing" },
-  { id:"c3", title:"Interior Design Trends for Modern Homes", vertical:"Interior", platforms:["IG","FB"], type:"Reel", plannedDate:"10 Mar 2026", status:"SCRIPT_READY", assignee:"Priya S" },
-  { id:"c4", title:"How Square Connect Helps Agents Close Deals", vertical:"SQ Connect", platforms:["LI","YT"], type:"Video", plannedDate:"12 Mar 2026", status:"VIDEO_UPLOADED", assignee:"Karan M" },
-  { id:"c5", title:"UM Property Investment Guide 2026", vertical:"UM", platforms:["IG"], type:"Reel", plannedDate:"15 Mar 2026", status:"SCHEDULED", assignee:"Anjali T", scheduledAt:"15 Mar 2026, 10:00 AM" },
-  { id:"c6", title:"NRI Investment Opportunities in India", vertical:"SY India", platforms:["IG","LI","YT"], type:"Reel", plannedDate:"17 Mar 2026", status:"PLANNED", assignee:"Rahul V" },
+  { id:"c1", title:"Pune Real Estate Market Report Q1 2026", seriesId:"s3", vertical:"SY India", platforms:["IG","YT","LI"], type:"Reel", plannedDate:"5 Mar 2026", status:"PUBLISHED", assignee:"Rahul V", instagramLink:"https://instagram.com/p/abc", youtubeLink:"https://youtube.com/watch?v=xyz", linkedinLink:"https://linkedin.com/post/def" },
+  { id:"c2", title:"Top 5 Dubai Investment Hotspots 2026", seriesId:"s4", vertical:"SY UAE", platforms:["IG","LI"], type:"Carousel", plannedDate:"8 Mar 2026", status:"DELAYED", assignee:"Sneha R", delayReason:"Delayed due to editing" },
+  { id:"c3", title:"Interior Design Trends for Modern Homes", seriesId:"s5", vertical:"Interior", platforms:["IG","FB"], type:"Reel", plannedDate:"10 Mar 2026", status:"SCRIPT_READY", assignee:"Priya S" },
+  { id:"c4", title:"How Square Connect Helps Agents Close Deals", seriesId:null, vertical:"SQ Connect", platforms:["LI","YT"], type:"Video", plannedDate:"12 Mar 2026", status:"VIDEO_UPLOADED", assignee:"Karan M" },
+  { id:"c5", title:"UM Property Investment Guide 2026", seriesId:null, vertical:"UM", platforms:["IG"], type:"Reel", plannedDate:"15 Mar 2026", status:"SCHEDULED", assignee:"Anjali T", scheduledAt:"15 Mar 2026, 10:00 AM" },
+  { id:"c6", title:"NRI Investment Opportunities in India", seriesId:"s2", vertical:"SY India", platforms:["IG","LI","YT"], type:"Reel", plannedDate:"17 Mar 2026", status:"PLANNED", assignee:"Rahul V" },
 ];
+
+function SeriesBadge({ seriesId }: { seriesId: string | null }) {
+  if (!seriesId || !SERIES_MAP[seriesId]) return <span className="text-[10px] text-gray-400">—</span>;
+  const s = SERIES_MAP[seriesId];
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border"
+      style={{ backgroundColor: s.color + "15", color: s.color, borderColor: s.color + "40" }}>
+      {s.emoji} {s.name}
+    </span>
+  );
+}
 
 function StatusBadge({ status }: { status: string }) {
   const s = STATUS_STYLE[status] ?? STATUS_STYLE.PLANNED;
@@ -131,6 +150,7 @@ export default function ContentManagementPage() {
             <thead>
               <tr>
                 <th>Title</th>
+                <th>Series</th>
                 <th>Vertical</th>
                 <th>Platforms</th>
                 <th>Type</th>
@@ -159,6 +179,7 @@ export default function ContentManagementPage() {
                       )}
                     </div>
                   </td>
+                  <td><SeriesBadge seriesId={(item as any).seriesId}/></td>
                   <td><span className="text-xs text-gray-600">{item.vertical}</span></td>
                   <td><div className="flex gap-1">{item.platforms.map(p => <PlatformBadge key={p} p={p}/>)}</div></td>
                   <td><span className="text-xs text-gray-600">{item.type}</span></td>

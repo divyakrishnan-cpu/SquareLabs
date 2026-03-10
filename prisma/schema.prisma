@@ -28,6 +28,7 @@ model User {
   tasks         Task[]    @relation("AssignedTasks")
   calendarItems ContentCalendarItem[]
   scripts       ContentScript[]
+  series        ContentSeries[]
 
   @@map("users")
 }
@@ -253,6 +254,30 @@ enum DelayReason {
   OTHER
 }
 
+// ── Content Series ─────────────────────────────────────────────────────────
+// e.g. "She Leads", "Ghar Wapsi", "Market Mondays"
+
+model ContentSeries {
+  id               String    @id @default(cuid())
+  name             String                        // "She Leads"
+  description      String?   @db.Text
+  vertical         Vertical
+  color            String    @default("#2563eb") // hex color for UI
+  emoji            String?                       // optional emoji icon
+  targetPerMonth   Int?                          // e.g. 4 videos/month
+  targetPerWeek    Int?                          // e.g. 1 video/week
+  platforms        SocialPlatform[]              // which platforms this series runs on
+  isActive         Boolean   @default(true)
+  createdById      String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  createdBy        User?               @relation(fields: [createdById], references: [id])
+  calendarItems    ContentCalendarItem[]
+
+  @@map("content_series")
+}
+
 model ContentCalendarItem {
   id               String             @id @default(cuid())
   vertical         Vertical
@@ -262,6 +287,7 @@ model ContentCalendarItem {
   title            String
   hook             String?            @db.Text
   topic            String?            @db.Text
+  seriesId         String?                       // link to ContentSeries
   assignedToId     String?
   plannedDate      DateTime
   scheduledAt      DateTime?
@@ -276,10 +302,11 @@ model ContentCalendarItem {
   youtubeLink      String?
   linkedinLink     String?
   facebookLink     String?
-  aiConfidence     Float?             // 0-1 score from AI planner
+  aiConfidence     Float?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
+  series           ContentSeries?     @relation(fields: [seriesId], references: [id])
   assignedTo       User?              @relation(fields: [assignedToId], references: [id])
   script           ContentScript?
   notifications    PublishNotification[]
