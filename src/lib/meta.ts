@@ -10,14 +10,14 @@
 
 const META_GRAPH = "https://graph.facebook.com/v20.0";
 
-// Permissions needed for Instagram insights + publishing + Facebook pages
+// Permissions needed for Instagram + Facebook read access & insights.
+// instagram_manage_media and business_management require Meta App Review
+// and are NOT needed for analytics/data retrieval — omit them.
 const SCOPES = [
   "instagram_basic",
   "instagram_manage_insights",
-  "instagram_manage_media",
   "pages_read_engagement",
   "pages_show_list",
-  "business_management",
 ].join(",");
 
 // ── OAuth URL builder ─────────────────────────────────────────────────────
