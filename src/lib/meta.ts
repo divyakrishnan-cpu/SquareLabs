@@ -169,12 +169,12 @@ export async function getFacebookPages(userToken: string): Promise<FBPage[]> {
   }
 
   // For any portfolio page not in OAuth list, swap in OAuth token if we have it
-  for (const [id, page] of merged) {
+  merged.forEach((page, id) => {
     const oauthToken = oauthTokenMap.get(id);
     if (oauthToken && page.access_token !== oauthToken) {
       merged.set(id, { ...page, access_token: oauthToken });
     }
-  }
+  });
 
   // Only return pages that have an access token
   return Array.from(merged.values()).filter(p => !!p.access_token);
