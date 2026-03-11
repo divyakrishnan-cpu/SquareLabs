@@ -361,6 +361,7 @@ model MetaIntegration {
   pageId              String
   pageName            String?
   pageAccessToken     String    @db.Text             // long-lived page token (60 days)
+  userAccessToken     String?   @db.Text             // long-lived USER token — needed for instagram_manage_insights
   tokenExpiresAt      DateTime?
   // Linked Instagram Business Account (may be null if page has no IG account)
   instagramAccountId  String?

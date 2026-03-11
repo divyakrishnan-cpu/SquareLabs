@@ -151,6 +151,7 @@ export async function GET(req: NextRequest) {
             pageId:             page.id,
             pageName:           page.name,
             pageAccessToken:    page.access_token,
+            userAccessToken:    longToken,             // store user token for IG queries
             tokenExpiresAt:     expiresAt,
             instagramAccountId: igProfile?.id                  ?? null,
             instagramHandle:    igProfile?.username             ?? null,
@@ -164,6 +165,7 @@ export async function GET(req: NextRequest) {
           },
           update: {
             pageAccessToken:    page.access_token,
+            userAccessToken:    longToken,             // refresh user token on re-connect
             tokenExpiresAt:     expiresAt,
             instagramAccountId: igProfile?.id                  ?? null,
             instagramHandle:    igProfile?.username             ?? null,
