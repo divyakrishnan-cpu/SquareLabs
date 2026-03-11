@@ -89,28 +89,54 @@ export async function GET(req: NextRequest) {
         const detectedVertical = detectVerticalFromPageName(page.name);
 
         // ── Resolve Instagram Business Account ID ─────────────────────
-        // The bulk page query sometimes omits instagram_business_account
-        // even when linked. Do an explicit per-page query as a fallback.
+        // CRITICAL: Page tokens don't carry Instagram permissions.
+        // Must use the long-lived USER token (longToken) to query
+        // instagram_business_account — it has all OAuth-granted scopes.
+        const META_GRAPH_CB = "https://graph.facebook.com/v20.0";
         let igId = page.instagram_business_account?.id ?? null;
 
-        if (!igId && page.access_token) {
+        if (!igId) {
           try {
-            const META_GRAPH = "https://graph.facebook.com/v20.0";
-            const igRes = await fetch(
-              `${META_GRAPH}/${page.id}?fields=instagram_business_account&access_token=${page.access_token}`
+            // Try 1: user token query (most reliable — carries all OAuth scopes)
+            const r1 = await fetch(
+              `${META_GRAPH_CB}/${page.id}?fields=instagram_business_account&access_token=${longToken}`
             );
-            const igData: { instagram_business_account?: { id: string } } = await igRes.json();
-            igId = igData.instagram_business_account?.id ?? null;
-            if (igId) console.log(`[Meta callback] Found IG account for ${page.name} via direct query: ${igId}`);
-          } catch {
-            // Silently skip — page may simply not have IG linked
-          }
+            const d1: { instagram_business_account?: { id: string } } = await r1.json();
+            igId = d1.instagram_business_account?.id ?? null;
+            if (igId) console.log(`[Meta] IG found via user token for ${page.name}: ${igId}`);
+          } catch { /* continue */ }
+        }
+
+        if (!igId) {
+          try {
+            // Try 2: page token query (fallback)
+            const r2 = await fetch(
+              `${META_GRAPH_CB}/${page.id}?fields=instagram_business_account&access_token=${page.access_token}`
+            );
+            const d2: { instagram_business_account?: { id: string } } = await r2.json();
+            igId = d2.instagram_business_account?.id ?? null;
+            if (igId) console.log(`[Meta] IG found via page token for ${page.name}: ${igId}`);
+          } catch { /* continue */ }
+        }
+
+        if (!igId) {
+          try {
+            // Try 3: /instagram_accounts edge (older endpoint, sometimes works)
+            const r3 = await fetch(
+              `${META_GRAPH_CB}/${page.id}/instagram_accounts?fields=id,username&access_token=${longToken}`
+            );
+            const d3: { data?: { id: string; username?: string }[] } = await r3.json();
+            igId = d3.data?.[0]?.id ?? null;
+            if (igId) console.log(`[Meta] IG found via instagram_accounts edge for ${page.name}: ${igId}`);
+          } catch { /* continue */ }
         }
 
         let igProfile = null;
-        if (igId && page.access_token) {
+        // Use page token for IG profile fetch (page token works for IG data once we have the IG ID)
+        const tokenForIg = page.access_token || longToken;
+        if (igId) {
           try {
-            igProfile = await getInstagramAccount(igId, page.access_token);
+            igProfile = await getInstagramAccount(igId, tokenForIg);
             igCount++;
           } catch (igErr) {
             console.warn(`[Meta callback] IG profile fetch failed for ${page.name}:`, igErr);
