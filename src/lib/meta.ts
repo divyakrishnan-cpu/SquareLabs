@@ -10,14 +10,14 @@
 
 const META_GRAPH = "https://graph.facebook.com/v20.0";
 
-// Permissions needed for Instagram + Facebook read access & insights.
-// instagram_manage_media and business_management require Meta App Review
-// and are NOT needed for analytics/data retrieval — omit them.
+// Permissions for Instagram + Facebook read access.
+// instagram_basic and instagram_manage_insights are DEPRECATED by Meta —
+// Instagram Business Account data is now accessed entirely via the Facebook
+// Page access token using pages_read_engagement + pages_show_list.
+// No separate Instagram scopes are needed for the Graph API v20+.
 const SCOPES = [
-  "instagram_basic",
-  "instagram_manage_insights",
-  "pages_read_engagement",
   "pages_show_list",
+  "pages_read_engagement",
 ].join(",");
 
 // ── Brand / Vertical auto-detection ──────────────────────────────────────
