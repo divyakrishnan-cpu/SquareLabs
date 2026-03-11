@@ -20,10 +20,6 @@ import {
   detectVerticalFromPageName,
 } from "@/lib/meta";
 
-// This route is intentionally public — it must be reachable before the user
-// has an active session cookie (the browser just returned from Facebook).
-// Add  api/meta/callback  to the middleware exclusion list.
-
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const code  = searchParams.get("code");
@@ -36,7 +32,7 @@ export async function GET(req: NextRequest) {
   if (error)           return failRedirect("meta_denied");
   if (!code || !state) return failRedirect("meta_invalid");
 
-  // ── Decode state ──────────────────────────────────────────────────────────
+  // ── Decode state ───────────────────────────────────────────────────────
   let email: string;
   try {
     const decoded = JSON.parse(Buffer.from(state, "base64url").toString());
@@ -45,92 +41,115 @@ export async function GET(req: NextRequest) {
     return failRedirect("meta_state_invalid");
   }
 
-  // Resolve user from email
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) return failRedirect("meta_user_not_found");
 
   try {
-    // ── 1. Exchange code → short-lived user token ─────────────────────────
+    // ── 1. Exchange code → short-lived user token ──────────────────────
     const shortData = await exchangeCodeForToken(code);
-    if (!shortData.access_token) return failRedirect("meta_token_error");
+    if (!shortData.access_token) {
+      console.error("[Meta callback] Token exchange failed:", shortData);
+      return failRedirect("meta_token_error");
+    }
 
-    // ── 2. Upgrade → long-lived user token (60 days) ─────────────────────
+    // ── 2. Upgrade → long-lived user token (60 days) ──────────────────
     const longData = await getLongLivedToken(shortData.access_token);
-    if (!longData.access_token) return failRedirect("meta_longtoken_error");
+    if (!longData.access_token) {
+      console.error("[Meta callback] Long-lived token failed:", longData);
+      return failRedirect("meta_longtoken_error");
+    }
 
     const longToken = longData.access_token;
     const expiresAt = longData.expires_in
       ? new Date(Date.now() + longData.expires_in * 1000)
       : null;
 
-    // ── 3. Get ALL Facebook Pages + linked Instagram accounts ─────────────
-    const pages = await getFacebookPages(longToken);
-    let igCount = 0;
+    // ── 3. Get ALL Facebook Pages ──────────────────────────────────────
+    const allPages = await getFacebookPages(longToken);
 
-    // If still 0 pages, redirect with a specific error for easier debugging
+    // Only process pages that have an access_token.
+    // Pages from the Business Portfolio API are listed even if the user
+    // didn't select them in the OAuth dialog — those have no token and
+    // cannot be stored or queried.
+    const pages = allPages.filter(p => !!p.access_token);
+
+    console.log(`[Meta callback] Total pages found: ${allPages.length}, with token: ${pages.length}`);
+
     if (pages.length === 0) {
-      console.error("[Meta callback] 0 pages returned. Token user:", email, "Scopes used: pages_show_list,pages_read_engagement,business_management");
+      console.error("[Meta callback] 0 pages with access tokens. All pages:", allPages.map(p => p.name));
       return failRedirect("meta_no_pages");
     }
 
+    let igCount = 0;
+    let savedCount = 0;
+
     for (const page of pages) {
-      // ── 4. Auto-detect brand from page name ───────────────────────────
-      const detectedVertical = detectVerticalFromPageName(page.name);
+      try {
+        // ── 4. Auto-detect brand ─────────────────────────────────────
+        const detectedVertical = detectVerticalFromPageName(page.name);
 
-      const igId = page.instagram_business_account?.id ?? null;
-      let igProfile = null;
-      if (igId) {
-        try {
-          igProfile = await getInstagramAccount(igId, page.access_token);
-          igCount++;
-        } catch { /* page exists even without IG */ }
+        const igId = page.instagram_business_account?.id ?? null;
+        let igProfile = null;
+        if (igId && page.access_token) {
+          try {
+            igProfile = await getInstagramAccount(igId, page.access_token);
+            igCount++;
+          } catch (igErr) {
+            console.warn(`[Meta callback] IG profile fetch failed for ${page.name}:`, igErr);
+          }
+        }
+
+        // ── 5. Upsert into MetaIntegration ───────────────────────────
+        await prisma.metaIntegration.upsert({
+          where: { userId_pageId: { userId: user.id, pageId: page.id } },
+          create: {
+            userId:             user.id,
+            pageId:             page.id,
+            pageName:           page.name,
+            pageAccessToken:    page.access_token,
+            tokenExpiresAt:     expiresAt,
+            instagramAccountId: igProfile?.id                  ?? null,
+            instagramHandle:    igProfile?.username             ?? null,
+            instagramName:      igProfile?.name                 ?? null,
+            profilePictureUrl:  igProfile?.profile_picture_url ?? null,
+            followersCount:     igProfile?.followers_count      ?? null,
+            followsCount:       igProfile?.follows_count        ?? null,
+            mediaCount:         igProfile?.media_count          ?? null,
+            vertical:           detectedVertical,
+            isActive:           true,
+          },
+          update: {
+            pageAccessToken:    page.access_token,
+            tokenExpiresAt:     expiresAt,
+            instagramAccountId: igProfile?.id                  ?? null,
+            instagramHandle:    igProfile?.username             ?? null,
+            instagramName:      igProfile?.name                 ?? null,
+            profilePictureUrl:  igProfile?.profile_picture_url ?? null,
+            followersCount:     igProfile?.followers_count      ?? null,
+            followsCount:       igProfile?.follows_count        ?? null,
+            mediaCount:         igProfile?.media_count          ?? null,
+            vertical:           detectedVertical,
+            isActive:           true,
+          },
+        });
+
+        savedCount++;
+      } catch (pageErr) {
+        // Don't crash the whole flow if one page fails — log and continue
+        console.error(`[Meta callback] Failed to save page "${page.name}":`, pageErr);
       }
-
-      // ── 5. Upsert into MetaIntegration ───────────────────────────────
-      await prisma.metaIntegration.upsert({
-        where: { userId_pageId: { userId: user.id, pageId: page.id } },
-        create: {
-          userId:             user.id,
-          pageId:             page.id,
-          pageName:           page.name,
-          pageAccessToken:    page.access_token,
-          tokenExpiresAt:     expiresAt,
-          instagramAccountId: igProfile?.id                  ?? null,
-          instagramHandle:    igProfile?.username             ?? null,
-          instagramName:      igProfile?.name                 ?? null,
-          profilePictureUrl:  igProfile?.profile_picture_url ?? null,
-          followersCount:     igProfile?.followers_count      ?? null,
-          followsCount:       igProfile?.follows_count        ?? null,
-          mediaCount:         igProfile?.media_count          ?? null,
-          vertical:           detectedVertical,
-          isActive:           true,
-        },
-        update: {
-          pageAccessToken:    page.access_token,
-          tokenExpiresAt:     expiresAt,
-          instagramAccountId: igProfile?.id                  ?? null,
-          instagramHandle:    igProfile?.username             ?? null,
-          instagramName:      igProfile?.name                 ?? null,
-          profilePictureUrl:  igProfile?.profile_picture_url ?? null,
-          followersCount:     igProfile?.followers_count      ?? null,
-          followsCount:       igProfile?.follows_count        ?? null,
-          mediaCount:         igProfile?.media_count          ?? null,
-          // Re-detect vertical on reconnect in case name changed
-          vertical:           detectedVertical,
-          isActive:           true,
-        },
-      });
     }
 
-    // ── 6. Redirect back to Settings with success flag ────────────────────
+    // ── 6. Redirect back to Settings ──────────────────────────────────
     return NextResponse.redirect(
       new URL(
-        `/settings?success=meta_connected&pages=${pages.length}&ig=${igCount}`,
+        `/settings?success=meta_connected&pages=${savedCount}&ig=${igCount}`,
         req.url
       )
     );
+
   } catch (err) {
-    console.error("[Meta callback error]", err);
+    console.error("[Meta callback] Unexpected error:", err);
     return failRedirect("meta_server_error");
   }
 }
