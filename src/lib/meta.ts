@@ -109,59 +109,75 @@ export interface FBPage {
 
 /** Return all Facebook Pages across the Square Yards Business Portfolio.
  *
- * Strategy (tried in order, results merged and deduped):
- * 1. /me/businesses → /{biz-id}/owned_pages   — Business Portfolio pages
- *    (Square Yards setup: all brands live under one Business Portfolio)
- * 2. /me/accounts                              — pages with direct personal role
- *    (fallback for any pages not under the portfolio)
+ * KEY INSIGHT: Page tokens from /me/businesses → /owned_pages are "system"
+ * tokens — they don't carry user-granted OAuth permissions (like instagram_manage_insights).
+ * Page tokens from /me/accounts ARE OAuth-granted and carry all user permissions.
+ *
+ * Strategy:
+ * 1. /me/accounts — OAuth-granted page tokens (carry Instagram permissions) ← PRIMARY
+ * 2. /me/businesses → /owned_pages — discover additional pages from portfolio
+ *    For these, swap in the OAuth page token from step 1 if available,
+ *    otherwise keep the business API token for basic page data only.
  */
 export async function getFacebookPages(userToken: string): Promise<FBPage[]> {
-  const seen = new Set<string>();
-  const allPages: FBPage[] = [];
+  // ── Step 1: /me/accounts — OAuth-granted tokens ────────────────────────
+  // These tokens carry instagram_manage_insights and all user-granted scopes.
+  const accRes = await fetch(
+    `${META_GRAPH}/me/accounts?fields=id,name,access_token,instagram_business_account&limit=100&access_token=${userToken}`
+  );
+  const accData: { data?: FBPage[]; error?: { message: string } } = await accRes.json();
+  const oauthPages: FBPage[] = accData.error ? [] : (accData.data ?? []);
 
-  const addPages = (pages: FBPage[]) => {
-    for (const p of pages) {
-      if (!seen.has(p.id)) {
-        seen.add(p.id);
-        allPages.push(p);
-      }
-    }
-  };
+  // Build a map of pageId → OAuth page token for quick lookup
+  const oauthTokenMap = new Map<string, string>();
+  for (const p of oauthPages) {
+    if (p.access_token) oauthTokenMap.set(p.id, p.access_token);
+  }
 
-  // ── 1. Business Portfolio API (/me/businesses → owned_pages) ──────────
-  //    Requires business_management scope (works in Dev Mode for app owner).
+  // ── Step 2: Business Portfolio API — discover all brand pages ──────────
   const bizRes = await fetch(
     `${META_GRAPH}/me/businesses?fields=id,name&limit=10&access_token=${userToken}`
   );
   const bizData: { data?: { id: string; name: string }[]; error?: { message: string } } =
     await bizRes.json();
 
+  const portfolioPages: FBPage[] = [];
+
   if (!bizData.error && bizData.data?.length) {
     for (const biz of bizData.data) {
-      // owned_pages: pages directly owned by the business
-      const ownedRes = await fetch(
-        `${META_GRAPH}/${biz.id}/owned_pages?fields=id,name,access_token,instagram_business_account&limit=100&access_token=${userToken}`
-      );
-      const ownedData: { data?: FBPage[]; error?: { message: string } } = await ownedRes.json();
-      if (!ownedData.error && ownedData.data) addPages(ownedData.data);
-
-      // client_pages: pages the business manages on behalf of clients
-      const clientRes = await fetch(
-        `${META_GRAPH}/${biz.id}/client_pages?fields=id,name,access_token,instagram_business_account&limit=100&access_token=${userToken}`
-      );
-      const clientData: { data?: FBPage[]; error?: { message: string } } = await clientRes.json();
-      if (!clientData.error && clientData.data) addPages(clientData.data);
+      for (const edge of ["owned_pages", "client_pages"]) {
+        const res = await fetch(
+          `${META_GRAPH}/${biz.id}/${edge}?fields=id,name,access_token,instagram_business_account&limit=100&access_token=${userToken}`
+        );
+        const data: { data?: FBPage[]; error?: { message: string } } = await res.json();
+        if (!data.error && data.data) portfolioPages.push(...data.data);
+      }
     }
   }
 
-  // ── 2. /me/accounts — personal page admin fallback ────────────────────
-  const accRes = await fetch(
-    `${META_GRAPH}/me/accounts?fields=id,name,access_token,instagram_business_account&limit=100&access_token=${userToken}`
-  );
-  const accData: { data?: FBPage[]; error?: { message: string } } = await accRes.json();
-  if (!accData.error && accData.data) addPages(accData.data);
+  // ── Merge: dedupe by page ID, preferring OAuth token over business token ─
+  const merged = new Map<string, FBPage>();
 
-  return allPages;
+  // Add portfolio pages first
+  for (const p of portfolioPages) {
+    if (!merged.has(p.id)) merged.set(p.id, p);
+  }
+
+  // Add/update with OAuth pages — these take priority (better tokens)
+  for (const p of oauthPages) {
+    merged.set(p.id, p); // Overwrite: OAuth token has full permissions
+  }
+
+  // For any portfolio page not in OAuth list, swap in OAuth token if we have it
+  for (const [id, page] of merged) {
+    const oauthToken = oauthTokenMap.get(id);
+    if (oauthToken && page.access_token !== oauthToken) {
+      merged.set(id, { ...page, access_token: oauthToken });
+    }
+  }
+
+  // Only return pages that have an access token
+  return Array.from(merged.values()).filter(p => !!p.access_token);
 }
 
 // ── Instagram account profile ─────────────────────────────────────────────
