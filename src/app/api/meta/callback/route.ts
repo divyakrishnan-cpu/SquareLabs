@@ -88,7 +88,25 @@ export async function GET(req: NextRequest) {
         // ── 4. Auto-detect brand ─────────────────────────────────────
         const detectedVertical = detectVerticalFromPageName(page.name);
 
-        const igId = page.instagram_business_account?.id ?? null;
+        // ── Resolve Instagram Business Account ID ─────────────────────
+        // The bulk page query sometimes omits instagram_business_account
+        // even when linked. Do an explicit per-page query as a fallback.
+        let igId = page.instagram_business_account?.id ?? null;
+
+        if (!igId && page.access_token) {
+          try {
+            const META_GRAPH = "https://graph.facebook.com/v20.0";
+            const igRes = await fetch(
+              `${META_GRAPH}/${page.id}?fields=instagram_business_account&access_token=${page.access_token}`
+            );
+            const igData: { instagram_business_account?: { id: string } } = await igRes.json();
+            igId = igData.instagram_business_account?.id ?? null;
+            if (igId) console.log(`[Meta callback] Found IG account for ${page.name} via direct query: ${igId}`);
+          } catch {
+            // Silently skip — page may simply not have IG linked
+          }
+        }
+
         let igProfile = null;
         if (igId && page.access_token) {
           try {
