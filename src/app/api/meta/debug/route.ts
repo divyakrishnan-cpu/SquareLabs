@@ -48,16 +48,18 @@ export async function GET(req: NextRequest) {
   }
 
   // ── 2. Per-page: test BOTH page token AND user token for IG access ────────
-  const results = await Promise.all(stored.map(async (page) => {
+  // Process sequentially to avoid Meta rate limits (18 pages × 4 calls = 72 requests)
+  const results = [];
+  for (const page of stored) {
     const pageToken = page.pageAccessToken;
 
-    // Test A: instagram_business_account field with PAGE token
+    // Test A: instagram_business_account + connected_instagram_account with both tokens
     const [igFieldPage, igFieldUser, igAccountsEdge, tokenDebug] = await Promise.all([
-      fetch(`${META_GRAPH}/${page.pageId}?fields=id,name,instagram_business_account&access_token=${pageToken}`)
+      fetch(`${META_GRAPH}/${page.pageId}?fields=id,name,instagram_business_account,connected_instagram_account&access_token=${pageToken}`)
         .then(r => r.json()).catch(e => ({ fetch_error: String(e) })),
 
       userToken
-        ? fetch(`${META_GRAPH}/${page.pageId}?fields=id,name,instagram_business_account&access_token=${userToken}`)
+        ? fetch(`${META_GRAPH}/${page.pageId}?fields=id,name,instagram_business_account,connected_instagram_account&access_token=${userToken}`)
             .then(r => r.json()).catch(e => ({ fetch_error: String(e) }))
         : Promise.resolve({ skipped: "no user token stored" }),
 
@@ -68,7 +70,7 @@ export async function GET(req: NextRequest) {
         .then(r => r.json()).catch(e => ({ fetch_error: String(e) })),
     ]);
 
-    return {
+    const result = {
       page_name:                 page.pageName,
       page_id:                   page.pageId,
       stored_ig_id:              page.instagramAccountId,
@@ -78,12 +80,14 @@ export async function GET(req: NextRequest) {
       // Field with page token
       ig_field_via_page_token: {
         instagram_business_account: (igFieldPage as any).instagram_business_account ?? null,
+        connected_instagram_account: (igFieldPage as any).connected_instagram_account ?? null,
         error: (igFieldPage as any).error ?? null,
       },
 
       // Field with user token (most reliable for IG)
       ig_field_via_user_token: {
         instagram_business_account: (igFieldUser as any).instagram_business_account ?? null,
+        connected_instagram_account: (igFieldUser as any).connected_instagram_account ?? null,
         error: (igFieldUser as any).error ?? null,
         skipped: (igFieldUser as any).skipped ?? null,
       },
@@ -102,7 +106,8 @@ export async function GET(req: NextRequest) {
         error:   (tokenDebug as any)?.error ?? null,
       },
     };
-  }));
+    results.push(result);
+  }
 
   return NextResponse.json({
     page_count:      stored.length,
