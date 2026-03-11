@@ -104,14 +104,48 @@ export interface FBPage {
   instagram_business_account?: { id: string };
 }
 
-/** Return all Facebook Pages the user manages, with linked Instagram account IDs */
+/** Return all Facebook Pages the user manages, with linked Instagram account IDs.
+ *
+ * Strategy:
+ * 1. Try /me/accounts — works when the personal FB account has direct page roles.
+ * 2. If 0 pages returned, try the Business API (/me/businesses → /owned_pages)
+ *    which covers pages managed through a Business Portfolio.
+ *    This doesn't require the business_management scope for owned pages.
+ */
 export async function getFacebookPages(userToken: string): Promise<FBPage[]> {
-  const res = await fetch(
-    `${META_GRAPH}/me/accounts?fields=id,name,access_token,instagram_business_account&access_token=${userToken}`
+  // ── Attempt 1: /me/accounts ────────────────────────────────────────────
+  const res1 = await fetch(
+    `${META_GRAPH}/me/accounts?fields=id,name,access_token,instagram_business_account&limit=100&access_token=${userToken}`
   );
-  const data: { data?: FBPage[]; error?: { message: string } } = await res.json();
-  if (data.error) throw new Error(data.error.message);
-  return data.data ?? [];
+  const data1: { data?: FBPage[]; error?: { message: string } } = await res1.json();
+  if (data1.error) throw new Error(data1.error.message);
+
+  if ((data1.data ?? []).length > 0) return data1.data!;
+
+  // ── Attempt 2: Business Portfolio API ─────────────────────────────────
+  // Covers pages that live in a Business Portfolio (Meta Business Suite)
+  // where the user is an admin of the business, not just a direct page admin.
+  const res2 = await fetch(
+    `${META_GRAPH}/me/businesses?fields=id,name&limit=10&access_token=${userToken}`
+  );
+  const bizData: { data?: { id: string; name: string }[]; error?: { message: string } } =
+    await res2.json();
+
+  if (bizData.error || !bizData.data?.length) return [];
+
+  const allPages: FBPage[] = [];
+
+  for (const biz of bizData.data) {
+    const pagesRes = await fetch(
+      `${META_GRAPH}/${biz.id}/owned_pages?fields=id,name,access_token,instagram_business_account&limit=100&access_token=${userToken}`
+    );
+    const pagesData: { data?: FBPage[]; error?: { message: string } } = await pagesRes.json();
+    if (!pagesData.error && pagesData.data) {
+      allPages.push(...pagesData.data);
+    }
+  }
+
+  return allPages;
 }
 
 // ── Instagram account profile ─────────────────────────────────────────────
