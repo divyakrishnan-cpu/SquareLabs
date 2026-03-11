@@ -223,9 +223,32 @@ function SettingsInner() {
         </div>
       )}
       {errorFlag && (
-        <div className="mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3 text-sm text-red-700">
-          <AlertTriangle size={16} className="shrink-0"/>
-          Meta connection failed ({errorFlag}). Please try again or check your Meta App configuration.
+        <div className="mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-3 text-sm text-red-700">
+          <AlertTriangle size={16} className="shrink-0 mt-0.5"/>
+          <div>
+            {errorFlag === "meta_no_pages" ? (
+              <>
+                <p className="font-semibold">Connected but no pages were found.</p>
+                <p className="text-xs text-red-500 mt-1">
+                  Facebook granted access but returned 0 pages. In your{" "}
+                  <a href="https://developers.facebook.com" target="_blank" rel="noreferrer" className="underline font-medium">
+                    Meta App settings
+                  </a>
+                  , go to <strong>App Review → Permissions</strong> and make sure{" "}
+                  <strong>business_management</strong> is listed. Then try connecting again.
+                  Also confirm your Facebook account has Admin access on at least one page in{" "}
+                  <a href="https://business.facebook.com" target="_blank" rel="noreferrer" className="underline font-medium">
+                    Business Manager
+                  </a>.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-semibold">Meta connection failed ({errorFlag}).</p>
+                <p className="text-xs text-red-500 mt-1">Please try again or check your Meta App configuration.</p>
+              </>
+            )}
+          </div>
         </div>
       )}
 

@@ -11,13 +11,15 @@
 const META_GRAPH = "https://graph.facebook.com/v20.0";
 
 // Permissions for Instagram + Facebook read access.
-// instagram_basic and instagram_manage_insights are DEPRECATED by Meta —
-// Instagram Business Account data is now accessed entirely via the Facebook
-// Page access token using pages_read_engagement + pages_show_list.
-// No separate Instagram scopes are needed for the Graph API v20+.
+// - pages_show_list + pages_read_engagement: read page data via personal account
+// - business_management: access Business Portfolio pages (Square Yards setup)
+//   ⚠ Requires App Review for public users, but works in Development Mode
+//   for the app owner/testers without review. Since SquareLabs is used internally
+//   only, this is the correct scope to use for Business Portfolio access.
 const SCOPES = [
   "pages_show_list",
   "pages_read_engagement",
+  "business_management",
 ].join(",");
 
 // ── Brand / Vertical auto-detection ──────────────────────────────────────
@@ -104,46 +106,59 @@ export interface FBPage {
   instagram_business_account?: { id: string };
 }
 
-/** Return all Facebook Pages the user manages, with linked Instagram account IDs.
+/** Return all Facebook Pages across the Square Yards Business Portfolio.
  *
- * Strategy:
- * 1. Try /me/accounts — works when the personal FB account has direct page roles.
- * 2. If 0 pages returned, try the Business API (/me/businesses → /owned_pages)
- *    which covers pages managed through a Business Portfolio.
- *    This doesn't require the business_management scope for owned pages.
+ * Strategy (tried in order, results merged and deduped):
+ * 1. /me/businesses → /{biz-id}/owned_pages   — Business Portfolio pages
+ *    (Square Yards setup: all brands live under one Business Portfolio)
+ * 2. /me/accounts                              — pages with direct personal role
+ *    (fallback for any pages not under the portfolio)
  */
 export async function getFacebookPages(userToken: string): Promise<FBPage[]> {
-  // ── Attempt 1: /me/accounts ────────────────────────────────────────────
-  const res1 = await fetch(
-    `${META_GRAPH}/me/accounts?fields=id,name,access_token,instagram_business_account&limit=100&access_token=${userToken}`
-  );
-  const data1: { data?: FBPage[]; error?: { message: string } } = await res1.json();
-  if (data1.error) throw new Error(data1.error.message);
+  const seen = new Set<string>();
+  const allPages: FBPage[] = [];
 
-  if ((data1.data ?? []).length > 0) return data1.data!;
+  const addPages = (pages: FBPage[]) => {
+    for (const p of pages) {
+      if (!seen.has(p.id)) {
+        seen.add(p.id);
+        allPages.push(p);
+      }
+    }
+  };
 
-  // ── Attempt 2: Business Portfolio API ─────────────────────────────────
-  // Covers pages that live in a Business Portfolio (Meta Business Suite)
-  // where the user is an admin of the business, not just a direct page admin.
-  const res2 = await fetch(
+  // ── 1. Business Portfolio API (/me/businesses → owned_pages) ──────────
+  //    Requires business_management scope (works in Dev Mode for app owner).
+  const bizRes = await fetch(
     `${META_GRAPH}/me/businesses?fields=id,name&limit=10&access_token=${userToken}`
   );
   const bizData: { data?: { id: string; name: string }[]; error?: { message: string } } =
-    await res2.json();
+    await bizRes.json();
 
-  if (bizData.error || !bizData.data?.length) return [];
+  if (!bizData.error && bizData.data?.length) {
+    for (const biz of bizData.data) {
+      // owned_pages: pages directly owned by the business
+      const ownedRes = await fetch(
+        `${META_GRAPH}/${biz.id}/owned_pages?fields=id,name,access_token,instagram_business_account&limit=100&access_token=${userToken}`
+      );
+      const ownedData: { data?: FBPage[]; error?: { message: string } } = await ownedRes.json();
+      if (!ownedData.error && ownedData.data) addPages(ownedData.data);
 
-  const allPages: FBPage[] = [];
-
-  for (const biz of bizData.data) {
-    const pagesRes = await fetch(
-      `${META_GRAPH}/${biz.id}/owned_pages?fields=id,name,access_token,instagram_business_account&limit=100&access_token=${userToken}`
-    );
-    const pagesData: { data?: FBPage[]; error?: { message: string } } = await pagesRes.json();
-    if (!pagesData.error && pagesData.data) {
-      allPages.push(...pagesData.data);
+      // client_pages: pages the business manages on behalf of clients
+      const clientRes = await fetch(
+        `${META_GRAPH}/${biz.id}/client_pages?fields=id,name,access_token,instagram_business_account&limit=100&access_token=${userToken}`
+      );
+      const clientData: { data?: FBPage[]; error?: { message: string } } = await clientRes.json();
+      if (!clientData.error && clientData.data) addPages(clientData.data);
     }
   }
+
+  // ── 2. /me/accounts — personal page admin fallback ────────────────────
+  const accRes = await fetch(
+    `${META_GRAPH}/me/accounts?fields=id,name,access_token,instagram_business_account&limit=100&access_token=${userToken}`
+  );
+  const accData: { data?: FBPage[]; error?: { message: string } } = await accRes.json();
+  if (!accData.error && accData.data) addPages(accData.data);
 
   return allPages;
 }

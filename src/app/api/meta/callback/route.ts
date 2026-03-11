@@ -67,6 +67,12 @@ export async function GET(req: NextRequest) {
     const pages = await getFacebookPages(longToken);
     let igCount = 0;
 
+    // If still 0 pages, redirect with a specific error for easier debugging
+    if (pages.length === 0) {
+      console.error("[Meta callback] 0 pages returned. Token user:", email, "Scopes used: pages_show_list,pages_read_engagement,business_management");
+      return failRedirect("meta_no_pages");
+    }
+
     for (const page of pages) {
       // ── 4. Auto-detect brand from page name ───────────────────────────
       const detectedVertical = detectVerticalFromPageName(page.name);
