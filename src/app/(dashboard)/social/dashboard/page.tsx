@@ -1,365 +1,633 @@
 "use client";
 
-import { useState } from "react";
-import { Header } from "@/components/layout/Header";
-import { Card, SectionHeader } from "@/components/ui/Card";
-import { Select } from "@/components/ui/Select";
+import { useState, useEffect, useCallback } from "react";
+import { Header }      from "@/components/layout/Header";
+import { Card }        from "@/components/ui/Card";
 import {
-  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
-} from "recharts";
-import { TrendingUp, TrendingDown, CheckCircle2, XCircle, Users, Eye, Heart, MousePointer } from "lucide-react";
+  Users, TrendingUp, TrendingDown, Heart, MessageCircle,
+  Bookmark, Share2, Play, Eye, Calendar, ExternalLink, QrCode, X,
+  RefreshCw, Instagram,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const VERTICALS = [
-  { value: "SY_INDIA",       label: "Square Yards India" },
-  { value: "SY_UAE",         label: "Square Yards UAE" },
-  { value: "INTERIOR",       label: "Interior Company" },
-  { value: "SQUARE_CONNECT", label: "Square Connect" },
-  { value: "UM",             label: "UM" },
+// ── Types ─────────────────────────────────────────────────────────────────
+
+interface MediaItem {
+  id:         string;
+  caption:    string;
+  mediaType:  string;
+  permalink:  string;
+  thumbnail:  string | null;
+  timestamp:  string;
+  date:       string;
+  likes:      number;
+  comments:   number;
+  saves:      number;
+  shares:     number;
+  reach:      number;
+  plays:      number;
+  engagement: number;
+  handle?:    string;
+  vertical?:  string | null;
+}
+
+interface AnalyticsData {
+  summary: {
+    totalFollowers: number;
+    accountCount:   number;
+    dateRange:      { from: string; to: string; days: number };
+  };
+  allTopEngagement: MediaItem[];
+  allGainDayMedia:  MediaItem[];
+  allLossDayMedia:  MediaItem[];
+  accounts: {
+    igId:               string;
+    handle:             string;
+    name:               string;
+    vertical:           string | null;
+    profilePicture:     string | null;
+    followers:          number;
+    hasFollowerInsights: boolean;
+    gainDays:           string[];
+    lossDays:           string[];
+    totalMediaInRange:  number;
+    topByEngagement:    MediaItem[];
+    gainDayMedia:       MediaItem[];
+    lossDayMedia:       MediaItem[];
+    followerTimeline:   { date: string; change: number }[];
+  }[];
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────
+
+const DATE_PRESETS = [
+  { label: "7 days",  days: 7 },
+  { label: "30 days", days: 30 },
+  { label: "90 days", days: 90 },
 ];
 
-const CHANNELS = ["All", "Instagram", "LinkedIn", "Facebook", "YouTube"];
-
-const METRICS: Record<string, any[]> = {
-  SY_INDIA: [
-    { label: "Net Followers",   value: "12,480", delta: "+8.2%",  up: true,  icon: <Users size={16}/> },
-    { label: "Reach",           value: "3.4M",   delta: "+14.1%", up: true,  icon: <Eye size={16}/> },
-    { label: "Interactions",    value: "48,200", delta: "+5.3%",  up: true,  icon: <Heart size={16}/> },
-    { label: "Link Clicks",     value: "9,340",  delta: "-2.1%",  up: false, icon: <MousePointer size={16}/> },
-  ],
-  SY_UAE: [
-    { label: "Net Followers",   value: "5,210",  delta: "+11.4%", up: true,  icon: <Users size={16}/> },
-    { label: "Reach",           value: "1.2M",   delta: "+9.7%",  up: true,  icon: <Eye size={16}/> },
-    { label: "Interactions",    value: "22,100", delta: "+3.8%",  up: true,  icon: <Heart size={16}/> },
-    { label: "Link Clicks",     value: "4,890",  delta: "+7.2%",  up: true,  icon: <MousePointer size={16}/> },
-  ],
-  INTERIOR: [
-    { label: "Net Followers",   value: "3,890",  delta: "+6.5%",  up: true,  icon: <Users size={16}/> },
-    { label: "Reach",           value: "890K",   delta: "+4.2%",  up: true,  icon: <Eye size={16}/> },
-    { label: "Interactions",    value: "18,400", delta: "-1.2%",  up: false, icon: <Heart size={16}/> },
-    { label: "Link Clicks",     value: "2,340",  delta: "+2.8%",  up: true,  icon: <MousePointer size={16}/> },
-  ],
-  SQUARE_CONNECT: [
-    { label: "Net Followers",   value: "2,140",  delta: "+3.1%",  up: true,  icon: <Users size={16}/> },
-    { label: "Reach",           value: "540K",   delta: "+7.9%",  up: true,  icon: <Eye size={16}/> },
-    { label: "Interactions",    value: "11,200", delta: "+9.4%",  up: true,  icon: <Heart size={16}/> },
-    { label: "Link Clicks",     value: "1,890",  delta: "-3.5%",  up: false, icon: <MousePointer size={16}/> },
-  ],
-  UM: [
-    { label: "Net Followers",   value: "1,320",  delta: "+2.4%",  up: true,  icon: <Users size={16}/> },
-    { label: "Reach",           value: "320K",   delta: "+5.1%",  up: true,  icon: <Eye size={16}/> },
-    { label: "Interactions",    value: "7,800",  delta: "+1.8%",  up: true,  icon: <Heart size={16}/> },
-    { label: "Link Clicks",     value: "980",    delta: "-0.9%",  up: false, icon: <MousePointer size={16}/> },
-  ],
+const VERTICAL_COLORS: Record<string, string> = {
+  SY_INDIA:       "bg-blue-100 text-blue-700",
+  SY_UAE:         "bg-purple-100 text-purple-700",
+  INTERIOR:       "bg-amber-100 text-amber-700",
+  SQUARE_CONNECT: "bg-green-100 text-green-700",
+  UM:             "bg-rose-100 text-rose-700",
 };
 
-const FOLLOWER_TREND = [
-  { month: "Oct", followers: 9200 },
-  { month: "Nov", followers: 10100 },
-  { month: "Dec", followers: 10800 },
-  { month: "Jan", followers: 11200 },
-  { month: "Feb", followers: 11900 },
-  { month: "Mar", followers: 12480 },
-];
-
-// What to do / not to do based on performance
-const PERFORMANCE_INSIGHTS: Record<string, { do: any[]; dont: any[] }> = {
-  All: {
-    do: [
-      { type: "Reels (60–90s)",       reason: "3.2× avg reach vs static posts",          eng: "8.4%" },
-      { type: "Before/After content", reason: "Highest saves and shares this month",       eng: "7.1%" },
-      { type: "Market tips (carousel)",reason: "2× link clicks vs single image",           eng: "6.8%" },
-      { type: "Founder/Expert talk",  reason: "Strong comment engagement from investors",  eng: "6.2%" },
-    ],
-    dont: [
-      { type: "Plain listing posts",  reason: "Below avg reach, low save rate",           eng: "1.2%" },
-      { type: "Long-form static text",reason: "High scroll-past rate on Instagram",       eng: "0.9%" },
-      { type: "Reposted news articles",reason: "Near-zero organic reach",                 eng: "0.4%" },
-    ],
-  },
-  Instagram: {
-    do: [
-      { type: "Reels with trending audio", reason: "Pushed by algorithm — 4× reach",     eng: "9.1%" },
-      { type: "Story polls & questions",   reason: "Top driver of profile visits",        eng: "7.4%" },
-      { type: "Carousel education posts",  reason: "High saves, boosted in explore",      eng: "6.9%" },
-    ],
-    dont: [
-      { type: "Static single image",       reason: "Organic reach down 40% vs reels",    eng: "1.4%" },
-      { type: "Long caption without hook", reason: "Users skip after first 2 lines",      eng: "0.7%" },
-    ],
-  },
-  LinkedIn: {
-    do: [
-      { type: "Market data posts",    reason: "High share rate among professionals",      eng: "5.8%" },
-      { type: "Personal experience",  reason: "3× comments vs company updates",           eng: "5.2%" },
-      { type: "Short video (< 2min)", reason: "Native video boosted in feed",             eng: "4.9%" },
-    ],
-    dont: [
-      { type: "Promotional listings", reason: "Flagged as low-value by algorithm",        eng: "0.6%" },
-      { type: "Cross-posted reels",   reason: "LinkedIn suppresses Instagram reposts",    eng: "0.3%" },
-    ],
-  },
-  Facebook: {
-    do: [
-      { type: "Video tours (3–5min)", reason: "Facebook still rewards long video",        eng: "4.2%" },
-      { type: "Community questions",  reason: "Drives comments and group engagement",     eng: "3.8%" },
-    ],
-    dont: [
-      { type: "Link-heavy posts",     reason: "Reach reduced when external links present", eng: "0.8%" },
-      { type: "Text-only posts",      reason: "Very low organic reach on Facebook",       eng: "0.5%" },
-    ],
-  },
-  YouTube: {
-    do: [
-      { type: "Property walk-through", reason: "Avg 8 min watch time — top performer",   eng: "12.4%" },
-      { type: "Expert interview",      reason: "High subscriber conversion rate",         eng: "9.8%" },
-      { type: "Shorts (< 60s)",        reason: "Shorts feed driving new subscribers",     eng: "7.2%" },
-    ],
-    dont: [
-      { type: "Low-quality thumbnails",reason: "CTR drops 60% without strong thumbnail", eng: "2.1%" },
-      { type: "No chapters/timestamps",reason: "Watch time lower without navigation",    eng: "3.4%" },
-    ],
-  },
+const VERTICAL_LABELS: Record<string, string> = {
+  SY_INDIA:       "SY India",
+  SY_UAE:         "SY UAE",
+  INTERIOR:       "Interior Co.",
+  SQUARE_CONNECT: "Sq Connect",
+  UM:             "Urban Money",
 };
 
-// Competitor insights
-const COMPETITOR_INSIGHTS: Record<string, { working: any[]; notWorking: any[] }> = {
-  All: {
-    working: [
-      { competitor: "Lodha Group",       content: "60s reels on lifestyle aspects of homes",   reach: "420K", eng: "7.8%" },
-      { competitor: "Godrej Properties", content: "Infographic carousels — market updates",    reach: "310K", eng: "6.2%" },
-      { competitor: "Prestige Group",    content: "Customer testimonial reels",                reach: "280K", eng: "5.9%" },
-      { competitor: "DLF",               content: "Before/after renovation stories",           reach: "195K", eng: "5.1%" },
-    ],
-    notWorking: [
-      { competitor: "Sobha Ltd",         content: "Press release reposts",                     reach: "8K",  eng: "0.3%" },
-      { competitor: "Puravankara",       content: "Price-focused listing posts",               reach: "12K", eng: "0.5%" },
-      { competitor: "Brigade Group",     content: "Long text announcements",                   reach: "6K",  eng: "0.2%" },
-    ],
-  },
-  Instagram: {
-    working: [
-      { competitor: "Lodha Group",       content: "Reels with trending audio",                 reach: "380K", eng: "9.2%" },
-      { competitor: "Godrej Properties", content: "Story Q&A about property buying",           reach: "210K", eng: "7.1%" },
-    ],
-    notWorking: [
-      { competitor: "Sobha Ltd",         content: "Static listing photos",                     reach: "5K",  eng: "0.4%" },
-      { competitor: "Puravankara",       content: "Promotional banners",                       reach: "8K",  eng: "0.3%" },
-    ],
-  },
-  LinkedIn: {
-    working: [
-      { competitor: "Godrej Properties", content: "CEO market commentary posts",               reach: "95K",  eng: "6.4%" },
-      { competitor: "DLF",               content: "Employee spotlight stories",                reach: "72K",  eng: "5.8%" },
-    ],
-    notWorking: [
-      { competitor: "Brigade Group",     content: "Generic award announcements",               reach: "4K",  eng: "0.2%" },
-      { competitor: "Prestige Group",    content: "Copied press releases",                     reach: "3K",  eng: "0.1%" },
-    ],
-  },
-  Facebook: {
-    working: [
-      { competitor: "Prestige Group",    content: "Virtual tour videos (5–8min)",              reach: "140K", eng: "4.8%" },
-      { competitor: "Lodha Group",       content: "Live Q&A sessions",                         reach: "89K",  eng: "4.2%" },
-    ],
-    notWorking: [
-      { competitor: "Sobha Ltd",         content: "Text-only market updates",                  reach: "2K",  eng: "0.2%" },
-    ],
-  },
-  YouTube: {
-    working: [
-      { competitor: "Lodha Group",       content: "Full property walk-through series",         reach: "220K", eng: "14.1%" },
-      { competitor: "Godrej Properties", content: "Expert panel discussions (20min)",          reach: "180K", eng: "11.2%" },
-    ],
-    notWorking: [
-      { competitor: "Puravankara",       content: "Low-production ad reposts",                 reach: "3K",  eng: "1.1%" },
-    ],
-  },
-};
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+function fmtNum(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`;
+  return n.toString();
+}
+
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
+
+function captionSnippet(caption: string, len = 80): string {
+  if (!caption) return "No caption";
+  return caption.length > len ? caption.slice(0, len) + "…" : caption;
+}
+
+function mediaTypeLabel(type: string): string {
+  if (type === "VIDEO" || type === "REEL") return "Reel";
+  if (type === "CAROUSEL_ALBUM")           return "Carousel";
+  return "Image";
+}
+
+// ── QR Code Modal ─────────────────────────────────────────────────────────
+
+function QRModal({ media, onClose }: { media: MediaItem; onClose: () => void }) {
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(media.permalink)}&format=png&margin=10`;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        {/* Thumbnail */}
+        <div className="relative bg-gray-100 aspect-video">
+          {media.thumbnail ? (
+            <img src={media.thumbnail} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <Instagram size={40} className="text-gray-300" />
+            </div>
+          )}
+          <button
+            onClick={onClose}
+            className="absolute top-3 right-3 w-8 h-8 bg-black/50 rounded-full flex items-center justify-center text-white hover:bg-black/70 transition-colors"
+          >
+            <X size={16} />
+          </button>
+          <span className="absolute top-3 left-3 bg-black/50 text-white text-[10px] font-medium px-2 py-0.5 rounded-full">
+            {mediaTypeLabel(media.mediaType)}
+          </span>
+          {media.vertical && (
+            <span className={cn(
+              "absolute bottom-3 left-3 text-[10px] font-medium px-2 py-0.5 rounded-full",
+              VERTICAL_COLORS[media.vertical] ?? "bg-gray-100 text-gray-600"
+            )}>
+              {VERTICAL_LABELS[media.vertical] ?? media.vertical}
+            </span>
+          )}
+        </div>
+
+        <div className="p-5">
+          {/* Handle + date */}
+          <div className="flex items-center gap-2 mb-3">
+            {media.handle && (
+              <span className="text-xs font-medium text-gray-500">{media.handle}</span>
+            )}
+            <span className="text-xs text-gray-400">· {fmtDate(media.date)}</span>
+          </div>
+
+          {/* Caption */}
+          <p className="text-sm text-gray-700 leading-relaxed mb-4">
+            {captionSnippet(media.caption, 160)}
+          </p>
+
+          {/* Metrics grid */}
+          <div className="grid grid-cols-4 gap-2 mb-4">
+            {[
+              { icon: <Heart size={13} className="text-rose-500" />,        label: "Likes",    val: media.likes },
+              { icon: <MessageCircle size={13} className="text-blue-500" />, label: "Comments", val: media.comments },
+              { icon: <Bookmark size={13} className="text-amber-500" />,    label: "Saves",    val: media.saves },
+              { icon: <Share2 size={13} className="text-green-500" />,      label: "Shares",   val: media.shares },
+            ].map(m => (
+              <div key={m.label} className="bg-gray-50 rounded-xl p-2.5 text-center">
+                <div className="flex justify-center mb-1">{m.icon}</div>
+                <p className="text-sm font-bold text-gray-900">{fmtNum(m.val)}</p>
+                <p className="text-[10px] text-gray-400">{m.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {(media.reach > 0 || media.plays > 0) && (
+            <p className="text-xs text-gray-400 mb-4 text-center">
+              {media.reach > 0 && <><Eye size={11} className="inline mr-1" />{fmtNum(media.reach)} reach</>}
+              {media.plays > 0 && <span className="ml-2"><Play size={11} className="inline mr-0.5" />{fmtNum(media.plays)} plays</span>}
+            </p>
+          )}
+
+          {/* QR Code */}
+          <div className="flex flex-col items-center gap-2 bg-gray-50 rounded-xl p-4 mb-4">
+            <img
+              src={qrUrl}
+              alt="QR code to Instagram post"
+              className="w-28 h-28 rounded-lg"
+            />
+            <p className="text-[10px] text-gray-400 flex items-center gap-1">
+              <QrCode size={10} /> Scan to view on Instagram
+            </p>
+          </div>
+
+          {/* Open link */}
+          <a
+            href={media.permalink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full py-2.5 bg-gradient-to-r from-purple-600 to-pink-500 text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity"
+          >
+            <ExternalLink size={14} />
+            Open on Instagram
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Video Card ─────────────────────────────────────────────────────────────
+
+function VideoCard({ media, onClick }: { media: MediaItem; onClick: () => void }) {
+  return (
+    <div
+      onClick={onClick}
+      className="group relative bg-white rounded-xl border border-gray-100 overflow-hidden cursor-pointer hover:shadow-md hover:border-gray-200 transition-all flex-shrink-0 w-52"
+    >
+      <div className="relative bg-gray-100 aspect-square">
+        {media.thumbnail ? (
+          <img src={media.thumbnail} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Instagram size={28} className="text-gray-300" />
+          </div>
+        )}
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 rounded-full p-2 shadow-lg">
+            <QrCode size={16} className="text-gray-700" />
+          </div>
+        </div>
+        <span className="absolute top-2 left-2 bg-black/50 text-white text-[9px] font-medium px-1.5 py-0.5 rounded-full">
+          {mediaTypeLabel(media.mediaType)}
+        </span>
+        {media.vertical && (
+          <span className={cn(
+            "absolute bottom-2 right-2 text-[9px] font-medium px-1.5 py-0.5 rounded-full",
+            VERTICAL_COLORS[media.vertical] ?? "bg-gray-100 text-gray-600"
+          )}>
+            {VERTICAL_LABELS[media.vertical] ?? media.vertical}
+          </span>
+        )}
+      </div>
+
+      <div className="p-3">
+        <p className="text-[11px] text-gray-500 mb-1.5">{fmtDate(media.date)}</p>
+        <p className="text-xs text-gray-700 line-clamp-2 leading-relaxed mb-2">
+          {captionSnippet(media.caption, 70)}
+        </p>
+        <div className="flex items-center gap-2.5 text-[10px] text-gray-500">
+          <span className="flex items-center gap-0.5"><Heart size={9} className="text-rose-400" />{fmtNum(media.likes)}</span>
+          <span className="flex items-center gap-0.5"><MessageCircle size={9} className="text-blue-400" />{fmtNum(media.comments)}</span>
+          <span className="flex items-center gap-0.5"><Bookmark size={9} className="text-amber-400" />{fmtNum(media.saves)}</span>
+          <span className="flex items-center gap-0.5"><Share2 size={9} className="text-green-400" />{fmtNum(media.shares)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Section Title ─────────────────────────────────────────────────────────
+
+function SectionTitle({ icon, title, subtitle, badge }: {
+  icon: React.ReactNode; title: string; subtitle?: string; badge?: string;
+}) {
+  return (
+    <div className="flex items-start gap-3 mb-4">
+      <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 mt-0.5">
+        {icon}
+      </div>
+      <div className="flex-1">
+        <div className="flex items-center gap-2">
+          <h3 className="font-semibold text-gray-900 text-sm">{title}</h3>
+          {badge && (
+            <span className="text-[10px] font-medium bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+              {badge}
+            </span>
+          )}
+        </div>
+        {subtitle && <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>}
+      </div>
+    </div>
+  );
+}
+
+// ── Empty State ────────────────────────────────────────────────────────────
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-8 text-center">
+      <Instagram size={18} className="text-gray-300 mb-2" />
+      <p className="text-xs text-gray-400">{message}</p>
+    </div>
+  );
+}
+
+// ── Video Row (horizontal scroll) ─────────────────────────────────────────
+
+function VideoRow({ items, onSelect }: { items: MediaItem[]; onSelect: (m: MediaItem) => void }) {
+  if (!items.length) return <EmptyState message="No posts found for this period" />;
+  return (
+    <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: "thin" }}>
+      {items.map(m => (
+        <VideoCard key={m.id} media={m} onClick={() => onSelect(m)} />
+      ))}
+    </div>
+  );
+}
+
+// ── Mini follower bar chart ────────────────────────────────────────────────
+
+function FollowerMiniChart({ data }: { data: { date: string; change: number }[] }) {
+  if (!data.length) return null;
+  const max = Math.max(...data.map(d => Math.abs(d.change)), 1);
+  const w = 4, gap = 2, h = 32;
+  return (
+    <svg width={data.length * (w + gap)} height={h} className="overflow-visible">
+      {data.map((d, i) => {
+        const barH  = Math.max(2, (Math.abs(d.change) / max) * h);
+        const isPos = d.change >= 0;
+        return (
+          <rect key={i} x={i * (w + gap)} y={isPos ? h - barH : 0}
+            width={w} height={barH} rx={1}
+            fill={isPos ? "#22c55e" : "#ef4444"} opacity={0.75} />
+        );
+      })}
+    </svg>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────
 
 export default function SocialDashboardPage() {
-  const [vertical, setVertical]   = useState("SY_INDIA");
-  const [channel, setChannel]     = useState("All");
+  const [daysPreset, setDaysPreset] = useState(30);
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo,   setCustomTo]   = useState("");
+  const [useCustom,  setUseCustom]  = useState(false);
 
-  const metrics     = METRICS[vertical] ?? METRICS.SY_INDIA;
-  const perfInsight = PERFORMANCE_INSIGHTS[channel] ?? PERFORMANCE_INSIGHTS.All;
-  const compInsight = COMPETITOR_INSIGHTS[channel]  ?? COMPETITOR_INSIGHTS.All;
+  const [data,    setData]    = useState<AnalyticsData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState<string | null>(null);
+
+  const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      let url = "/api/meta/instagram/analytics?";
+      if (useCustom && customFrom && customTo) {
+        url += `from=${customFrom}&to=${customTo}`;
+      } else {
+        url += `days=${daysPreset}`;
+      }
+      const res  = await fetch(url);
+      const json = await res.json();
+      if (json.error) {
+        setError(json.message ?? json.error);
+        setData(null);
+      } else {
+        setData(json);
+      }
+    } catch {
+      setError("Failed to load analytics. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, [daysPreset, useCustom, customFrom, customTo]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   return (
     <>
       <Header
-        title="Social Media Dashboard"
-        subtitle="1-month performance overview with content recommendations"
+        title="Instagram Analytics"
+        subtitle="Real-time performance across all connected brands"
       />
 
-      {/* Filters */}
+      {/* ── Filter Bar ──────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3 mt-4">
-        <Select
-          value={vertical}
-          onChange={v => setVertical(v)}
-          options={VERTICALS}
-          className="w-52"
-        />
         <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
-          {CHANNELS.map(ch => (
+          {DATE_PRESETS.map(p => (
             <button
-              key={ch}
-              onClick={() => setChannel(ch)}
+              key={p.days}
+              onClick={() => { setDaysPreset(p.days); setUseCustom(false); }}
               className={cn(
                 "px-3 py-1.5 rounded-md text-xs font-medium transition-all",
-                channel === ch
-                  ? "bg-white text-accent-600 shadow-sm"
+                !useCustom && daysPreset === p.days
+                  ? "bg-white text-blue-600 shadow-sm"
                   : "text-gray-500 hover:text-gray-700"
               )}
             >
-              {ch}
+              {p.label}
             </button>
           ))}
         </div>
+
+        <div className="flex items-center gap-2">
+          <input type="date" value={customFrom}
+            onChange={e => { setCustomFrom(e.target.value); setUseCustom(true); }}
+            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-200"
+          />
+          <span className="text-xs text-gray-400">to</span>
+          <input type="date" value={customTo}
+            onChange={e => { setCustomTo(e.target.value); setUseCustom(true); }}
+            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-200"
+          />
+        </div>
+
+        <button
+          onClick={fetchData} disabled={loading}
+          className="ml-auto flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+        >
+          <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+          {loading ? "Loading…" : "Refresh"}
+        </button>
       </div>
 
-      <div className="mt-5 space-y-6">
-        {/* KPI Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {metrics.map(m => (
-            <Card key={m.label} className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-400">{m.icon}</span>
-                <span className={cn(
-                  "text-xs font-medium flex items-center gap-0.5",
-                  m.up ? "text-green-600" : "text-red-500"
-                )}>
-                  {m.up ? <TrendingUp size={11}/> : <TrendingDown size={11}/>}
-                  {m.delta}
-                </span>
+      {/* ── Loading ──────────────────────────────────────────────────────── */}
+      {loading && (
+        <div className="mt-6 space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {[1, 2, 3].map(i => <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />)}
+          </div>
+          <div className="h-48 bg-gray-100 rounded-xl animate-pulse" />
+          <div className="h-64 bg-gray-100 rounded-xl animate-pulse" />
+        </div>
+      )}
+
+      {/* ── Error ────────────────────────────────────────────────────────── */}
+      {!loading && error && (
+        <Card className="mt-6 p-8 text-center">
+          <Instagram size={32} className="text-gray-300 mx-auto mb-3" />
+          <p className="text-sm font-medium text-gray-700 mb-1">
+            {error.includes("no_instagram") ? "No Instagram accounts connected" : "Something went wrong"}
+          </p>
+          <p className="text-xs text-gray-400 mb-4">{error}</p>
+          <a href="/settings" className="text-xs text-blue-600 hover:underline">
+            → Go to Settings to connect Instagram
+          </a>
+        </Card>
+      )}
+
+      {/* ── Dashboard ────────────────────────────────────────────────────── */}
+      {!loading && data && (
+        <div className="mt-5 space-y-6">
+
+          {/* Summary cards */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <Card className="p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <Users size={14} className="text-blue-500" />
+                <span className="text-xs text-gray-500">Total Followers</span>
               </div>
-              <p className="text-2xl font-bold text-gray-900">{m.value}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{m.label}</p>
+              <p className="text-2xl font-bold text-gray-900">{fmtNum(data.summary.totalFollowers)}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">across {data.summary.accountCount} accounts</p>
+            </Card>
+
+            <Card className="p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <Calendar size={14} className="text-purple-500" />
+                <span className="text-xs text-gray-500">Date Range</span>
+              </div>
+              <p className="text-base font-bold text-gray-900">
+                {fmtDate(data.summary.dateRange.from)} – {fmtDate(data.summary.dateRange.to)}
+              </p>
+              <p className="text-[11px] text-gray-400 mt-0.5">{data.summary.dateRange.days} days</p>
+            </Card>
+
+            <Card className="p-4 col-span-2 md:col-span-1">
+              <div className="flex items-center gap-2 mb-2">
+                <Instagram size={14} className="text-pink-500" />
+                <span className="text-xs text-gray-500">Connected Accounts</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {data.accounts.map(a => (
+                  <span key={a.igId} className={cn(
+                    "text-[10px] font-medium px-2 py-0.5 rounded-full",
+                    VERTICAL_COLORS[a.vertical ?? ""] ?? "bg-gray-100 text-gray-600"
+                  )}>
+                    {a.handle}
+                  </span>
+                ))}
+              </div>
+            </Card>
+          </div>
+
+          {/* Followers per account */}
+          <Card className="p-5">
+            <SectionTitle
+              icon={<Users size={15} className="text-blue-500" />}
+              title="Followers per Account"
+              subtitle="Current follower count with daily change sparkline"
+            />
+            <div className="space-y-3">
+              {data.accounts.map(a => {
+                const totalChange = a.followerTimeline.reduce((s, d) => s + d.change, 0);
+                return (
+                  <div key={a.igId} className="flex items-center gap-4 py-1">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 overflow-hidden shrink-0 flex items-center justify-center text-white text-xs font-bold">
+                      {a.profilePicture
+                        ? <img src={a.profilePicture} alt="" className="w-full h-full object-cover" />
+                        : a.handle.slice(1, 3).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-gray-900">{a.handle}</p>
+                        {a.vertical && (
+                          <span className={cn("text-[9px] font-medium px-1.5 py-0.5 rounded-full",
+                            VERTICAL_COLORS[a.vertical] ?? "bg-gray-100 text-gray-600"
+                          )}>
+                            {VERTICAL_LABELS[a.vertical] ?? a.vertical}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-400">
+                        {fmtNum(a.followers)} followers · {a.totalMediaInRange} posts this period
+                      </p>
+                    </div>
+                    {a.hasFollowerInsights && a.followerTimeline.length > 0 && (
+                      <div className="hidden md:block">
+                        <FollowerMiniChart data={a.followerTimeline} />
+                      </div>
+                    )}
+                    {a.hasFollowerInsights && (
+                      <div className={cn(
+                        "text-xs font-semibold flex items-center gap-0.5 shrink-0",
+                        totalChange >= 0 ? "text-green-600" : "text-red-500"
+                      )}>
+                        {totalChange >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                        {totalChange >= 0 ? "+" : ""}{fmtNum(totalChange)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          {/* Top Engagement Videos */}
+          <Card className="p-5">
+            <SectionTitle
+              icon={<Heart size={15} className="text-rose-500" />}
+              title="Top Engagement Videos"
+              subtitle="Posts with highest likes + comments + saves + shares — tap any to get QR code"
+              badge={`${data.allTopEngagement.length} posts`}
+            />
+            <VideoRow items={data.allTopEngagement} onSelect={setSelectedMedia} />
+          </Card>
+
+          {/* Gain + Loss sections */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Card className="p-5">
+              <SectionTitle
+                icon={<TrendingUp size={15} className="text-green-500" />}
+                title="Follower Growth Days"
+                subtitle="Content published on days with the highest follower gains"
+                badge={data.allGainDayMedia.length > 0 ? `${data.allGainDayMedia.length} posts` : undefined}
+              />
+              {data.allGainDayMedia.length > 0 ? (
+                <VideoRow items={data.allGainDayMedia} onSelect={setSelectedMedia} />
+              ) : (
+                <EmptyState message={
+                  data.accounts.some(a => a.hasFollowerInsights)
+                    ? "No posts on peak follower gain days this period"
+                    : "Follower insight data not available (needs 100+ followers)"
+                } />
+              )}
+            </Card>
+
+            <Card className="p-5">
+              <SectionTitle
+                icon={<TrendingDown size={15} className="text-red-400" />}
+                title="Unfollow Days"
+                subtitle="Content published on days with the most unfollows"
+                badge={data.allLossDayMedia.length > 0 ? `${data.allLossDayMedia.length} posts` : undefined}
+              />
+              {data.allLossDayMedia.length > 0 ? (
+                <VideoRow items={data.allLossDayMedia} onSelect={setSelectedMedia} />
+              ) : (
+                <EmptyState message={
+                  data.accounts.some(a => a.hasFollowerInsights)
+                    ? "No significant unfollow days this period 🎉"
+                    : "Follower insight data not available (needs 100+ followers)"
+                } />
+              )}
+            </Card>
+          </div>
+
+          {/* Per-account breakdown */}
+          {data.accounts.map(account => (
+            <Card key={account.igId} className="p-5">
+              <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 overflow-hidden shrink-0 flex items-center justify-center text-white text-sm font-bold">
+                  {account.profilePicture
+                    ? <img src={account.profilePicture} alt="" className="w-full h-full object-cover" />
+                    : account.handle.slice(1, 3).toUpperCase()}
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-gray-900 text-sm">{account.handle}</p>
+                    {account.vertical && (
+                      <span className={cn("text-[9px] font-medium px-1.5 py-0.5 rounded-full",
+                        VERTICAL_COLORS[account.vertical] ?? "bg-gray-100 text-gray-600"
+                      )}>
+                        {VERTICAL_LABELS[account.vertical] ?? account.vertical}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    {fmtNum(account.followers)} followers · {account.totalMediaInRange} posts this period
+                  </p>
+                </div>
+              </div>
+              <p className="text-xs font-medium text-gray-500 mb-3">Top posts by engagement</p>
+              <VideoRow
+                items={account.topByEngagement.map(m => ({ ...m, handle: account.handle, vertical: account.vertical }))}
+                onSelect={setSelectedMedia}
+              />
             </Card>
           ))}
+
         </div>
+      )}
 
-        {/* Follower trend */}
-        <Card className="p-5">
-          <SectionHeader title="Follower Growth — Last 6 Months" subtitle="Net follower trend" />
-          <div className="h-48 mt-3">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={FOLLOWER_TREND}>
-                <defs>
-                  <linearGradient id="fg" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#2563eb" stopOpacity={0.15}/>
-                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} axisLine={false} tickLine={false}/>
-                <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${(v/1000).toFixed(0)}K`}/>
-                <Tooltip formatter={(v: any) => [v.toLocaleString(), "Followers"]}/>
-                <Area type="monotone" dataKey="followers" stroke="#2563eb" strokeWidth={2} fill="url(#fg)"/>
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-
-        {/* What to do / not to do */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Do */}
-          <Card className="p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <CheckCircle2 size={16} className="text-green-500"/>
-              <h3 className="font-semibold text-gray-900 text-sm">What to do — based on your performance</h3>
-            </div>
-            <div className="space-y-3">
-              {perfInsight.do.map((item, i) => (
-                <div key={i} className="flex items-start gap-3 p-3 bg-green-50 rounded-lg border border-green-100">
-                  <CheckCircle2 size={14} className="text-green-500 mt-0.5 shrink-0"/>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900">{item.type}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">{item.reason}</p>
-                  </div>
-                  <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded shrink-0">
-                    {item.eng} eng
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          {/* Don't */}
-          <Card className="p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <XCircle size={16} className="text-red-400"/>
-              <h3 className="font-semibold text-gray-900 text-sm">What not to do — underperforming content</h3>
-            </div>
-            <div className="space-y-3">
-              {perfInsight.dont.map((item, i) => (
-                <div key={i} className="flex items-start gap-3 p-3 bg-red-50 rounded-lg border border-red-100">
-                  <XCircle size={14} className="text-red-400 mt-0.5 shrink-0"/>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900">{item.type}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">{item.reason}</p>
-                  </div>
-                  <span className="text-xs font-semibold text-red-600 bg-red-100 px-2 py-0.5 rounded shrink-0">
-                    {item.eng} eng
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </div>
-
-        {/* Competitor insights */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Competitor - what works */}
-          <Card className="p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp size={16} className="text-accent-500"/>
-              <h3 className="font-semibold text-gray-900 text-sm">Competitor — top performing content</h3>
-            </div>
-            <div className="space-y-2">
-              {compInsight.working.map((item, i) => (
-                <div key={i} className="flex items-center gap-3 p-3 border border-gray-100 rounded-lg hover:bg-gray-50">
-                  <div className="w-7 h-7 rounded-full bg-accent-100 flex items-center justify-center shrink-0">
-                    <span className="text-accent-700 font-bold text-[10px]">{i + 1}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-gray-700">{item.competitor}</p>
-                    <p className="text-xs text-gray-500 truncate">{item.content}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-xs font-semibold text-accent-600">{item.eng}</p>
-                    <p className="text-[10px] text-gray-400">{item.reach} reach</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          {/* Competitor - what doesn't work */}
-          <Card className="p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingDown size={16} className="text-amber-500"/>
-              <h3 className="font-semibold text-gray-900 text-sm">Competitor — low performing content</h3>
-            </div>
-            <div className="space-y-2">
-              {compInsight.notWorking.map((item, i) => (
-                <div key={i} className="flex items-center gap-3 p-3 border border-amber-100 rounded-lg bg-amber-50/40">
-                  <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
-                    <TrendingDown size={12} className="text-amber-600"/>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-gray-700">{item.competitor}</p>
-                    <p className="text-xs text-gray-500 truncate">{item.content}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-xs font-semibold text-amber-600">{item.eng}</p>
-                    <p className="text-[10px] text-gray-400">{item.reach} reach</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </div>
-      </div>
+      {/* ── QR Modal ────────────────────────────────────────────────────── */}
+      {selectedMedia && (
+        <QRModal media={selectedMedia} onClose={() => setSelectedMedia(null)} />
+      )}
     </>
   );
 }
