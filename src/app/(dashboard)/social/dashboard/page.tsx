@@ -68,6 +68,7 @@ interface MetricsData {
     topCountries: { name: string; value: number }[];
   } | null;
   topVideosLastWeek: VideoItem[];
+  insightErrors?: string[];
 }
 
 interface VideoItem {
@@ -848,6 +849,35 @@ export default function SocialDashboardPage() {
               )}
             </div>
           </div>
+
+          {/* ── Insight errors warning ────────────────────────────────────── */}
+          {data.insightErrors && data.insightErrors.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <div className="flex items-start gap-3">
+                <span className="text-amber-500 text-lg shrink-0">⚠️</span>
+                <div>
+                  <p className="text-sm font-semibold text-amber-800 mb-1">
+                    Instagram Insights API is not returning data
+                  </p>
+                  <p className="text-xs text-amber-700 mb-2">
+                    Views, Reach, Follows, Link Clicks and other insight metrics require the
+                    <strong> instagram_manage_insights</strong> permission to be approved by Meta. This usually means:
+                  </p>
+                  <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside mb-2">
+                    <li>Your Meta app may need App Review for <code>instagram_manage_insights</code></li>
+                    <li>Or the Instagram account needs to be a Business / Creator account</li>
+                    <li>Or you need to <a href="/settings" className="underline font-medium">reconnect Meta</a> with updated permissions</li>
+                  </ul>
+                  <details className="text-[10px] text-amber-600">
+                    <summary className="cursor-pointer font-medium">View API errors</summary>
+                    <div className="mt-1 space-y-0.5 font-mono">
+                      {data.insightErrors.slice(0, 5).map((e, i) => <p key={i}>{e}</p>)}
+                    </div>
+                  </details>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ── Metrics Table ─────────────────────────────────────────────── */}
           <Card className="p-0 overflow-hidden">

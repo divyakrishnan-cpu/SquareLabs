@@ -27,18 +27,22 @@ async function fetchInsights(
   since: number,
   until: number,
   token: string
-): Promise<Record<string, { date: string; value: number }[]>> {
+): Promise<{
+  data:   Record<string, { date: string; value: number }[]>;
+  errors: string[];
+}> {
   const result: Record<string, { date: string; value: number }[]> = {};
+  const errors: string[] = [];
 
-  // Batch into groups of 5 (Meta API limit per call)
-  for (let i = 0; i < metrics.length; i += 5) {
-    const batch = metrics.slice(i, i + 5).join(",");
+  // Fetch metrics one at a time — some metrics (e.g. follower_count) fail in batch with others
+  for (const metric of metrics) {
     try {
-      const res  = await fetch(
-        `${META}/${igId}/insights?metric=${batch}&period=day&since=${since}&until=${until}&access_token=${token}`
-      );
+      const url = `${META}/${igId}/insights?metric=${metric}&period=day&since=${since}&until=${until}&access_token=${token}`;
+      const res  = await fetch(url);
       const data = await res.json();
-      if (!data.error && data.data) {
+      if (data.error) {
+        errors.push(`[${metric}] ${data.error.message} (code ${data.error.code})`);
+      } else if (data.data) {
         for (const item of data.data) {
           result[item.name] = (item.values ?? []).map((v: { end_time: string; value: number }) => ({
             date:  v.end_time.split("T")[0],
@@ -46,9 +50,11 @@ async function fetchInsights(
           }));
         }
       }
-    } catch { /* silently skip failed metric batch */ }
+    } catch (e) {
+      errors.push(`[${metric}] fetch exception: ${String(e)}`);
+    }
   }
-  return result;
+  return { data: result, errors };
 }
 
 async function fetchDemographics(igId: string, token: string) {
@@ -252,12 +258,14 @@ export async function GET(req: NextRequest) {
     "phone_call_clicks", "text_message_clicks",
   ];
 
-  const [currentInsights, currentMedia] = await Promise.all([
+  const [insightResult, currentMedia] = await Promise.all([
     fetchInsights(igId, INSIGHT_METRICS, sinceTs, untilTs, token),
     fetchMediaStats(igId, token, fromDate, toDate),
   ]);
 
-  const currentTotals = buildTotals(currentInsights, currentMedia);
+  const currentInsights = insightResult.data;
+  const insightErrors   = insightResult.errors;
+  const currentTotals   = buildTotals(currentInsights, currentMedia);
 
   // ── Fetch comparison period insights ────────────────────────────────────
   let compTotals = null;
@@ -270,8 +278,8 @@ export async function GET(req: NextRequest) {
       fetchInsights(igId, INSIGHT_METRICS, compSince, compUntil, token),
       fetchMediaStats(igId, token, compFromDate, compToDate),
     ]);
-    compInsights = ci;
-    compTotals   = buildTotals(ci, cm);
+    compInsights = ci.data;
+    compTotals   = buildTotals(ci.data, cm);
   }
 
   // ── Demographics ────────────────────────────────────────────────────────
@@ -305,5 +313,7 @@ export async function GET(req: NextRequest) {
     } : null,
     demographics,
     topVideosLastWeek: lastWeekMedia.topMedia,
+    // Debug field — shows any errors from the Instagram Insights API
+    insightErrors: insightErrors.length > 0 ? insightErrors : undefined,
   });
 }
