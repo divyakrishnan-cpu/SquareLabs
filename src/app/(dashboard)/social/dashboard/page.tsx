@@ -753,6 +753,27 @@ export default function SocialDashboardPage() {
     }
   }, [vertical, fetchData]);
 
+  const [backfilling, setBackfilling] = useState(false);
+  const backfillHistory = useCallback(async () => {
+    setBackfilling(true);
+    setSyncMsg(null);
+    try {
+      setSyncMsg("Backfilling last 30 days… this may take ~30 seconds");
+      const res  = await fetch("/api/meta/instagram/backfill", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ vertical, days: 30 }),
+      });
+      const json = await res.json();
+      setSyncMsg(`Backfill complete — ${json.filled} snapshots stored. Refreshing…`);
+      setTimeout(() => { fetchData(); setSyncMsg(null); }, 2000);
+    } catch {
+      setSyncMsg("Backfill failed. Try again.");
+    } finally {
+      setBackfilling(false);
+    }
+  }, [vertical, fetchData]);
+
   // ── Available platforms (Pinterest only for Interior) ────────────────────────
   const availablePlatforms = PLATFORMS.filter(p => !p.interiorOnly || vertical === "INTERIOR");
 
@@ -836,8 +857,15 @@ export default function SocialDashboardPage() {
           </button>
 
           <div className="ml-auto flex items-center gap-2">
+            {/* Backfill last 30 days into DB */}
+            <button onClick={backfillHistory} disabled={backfilling || syncing || loading}
+              title="Fetch & store the last 30 days of historical data from Meta API"
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-orange-50 border border-orange-200 text-orange-700 hover:bg-orange-100 transition-colors disabled:opacity-50">
+              <RefreshCw size={12} className={backfilling ? "animate-spin" : ""} />
+              {backfilling ? "Backfilling…" : "Backfill 30d"}
+            </button>
             {/* Sync today's data into DB */}
-            <button onClick={syncNow} disabled={syncing || loading}
+            <button onClick={syncNow} disabled={syncing || backfilling || loading}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 transition-colors disabled:opacity-50">
               <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
               {syncing ? "Syncing…" : "Sync Today"}
@@ -957,11 +985,15 @@ export default function SocialDashboardPage() {
                     <p className="text-sm font-semibold text-orange-800 mb-1">
                       Data available from {fmtDate(data.dbActualRange.from)} – {fmtDate(data.dbActualRange.to)} only
                     </p>
-                    <p className="text-xs text-orange-700">
+                    <p className="text-xs text-orange-700 mb-2">
                       You selected {fmtDate(requestedFrom)} – {fmtDate(requestedTo)} but the daily sync only has {data.dbDaysStored} day{data.dbDaysStored !== 1 ? "s" : ""} stored so far.
-                      All metrics on this page reflect <strong>{data.dbActualRange.from} → {data.dbActualRange.to}</strong> so they can be compared fairly.
-                      Historical data will accumulate automatically as the daily sync runs each night.
+                      All metrics reflect <strong>{data.dbActualRange.from} → {data.dbActualRange.to}</strong> so they compare fairly.
                     </p>
+                    <button onClick={backfillHistory} disabled={backfilling}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-orange-100 border border-orange-300 text-orange-800 hover:bg-orange-200 transition-colors disabled:opacity-50 font-medium">
+                      <RefreshCw size={11} className={backfilling ? "animate-spin" : ""} />
+                      {backfilling ? "Backfilling…" : "Backfill last 30 days now"}
+                    </button>
                   </div>
                 </div>
               </div>
