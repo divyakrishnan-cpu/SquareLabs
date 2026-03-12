@@ -411,7 +411,7 @@ interface MetricDef {
 const METRIC_DEFS: MetricDef[] = [
   { key: "views",               dailyKey: "views",               label: "Views (Impressions)",        icon: <Eye size={14} />,              color: "text-indigo-500" },
   { key: "reach",               dailyKey: "reach",               label: "Reach",                      icon: <Globe size={14} />,            color: "text-blue-500" },
-  { key: "contentInteractions", dailyKey: "views",               label: "Content Interactions",       icon: <Heart size={14} />,            color: "text-rose-500" },
+  { key: "contentInteractions", dailyKey: "total_interactions",  label: "Content Interactions",       icon: <Heart size={14} />,            color: "text-rose-500" },
   { key: "linkClicks",          dailyKey: "website_clicks",      label: "Link Clicks",                icon: <MousePointerClick size={14} />, color: "text-cyan-500" },
   { key: "profileVisits",       dailyKey: "profile_views",       label: "Profile Visits",             icon: <Users size={14} />,            color: "text-violet-500" },
   { key: "follows",             dailyKey: "follows",             label: "Follows",                    icon: <UserCheck size={14} />,        color: "text-green-500" },

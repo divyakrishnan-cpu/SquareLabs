@@ -33,25 +33,26 @@ function chunkRange(since: number, until: number): { since: number; until: numbe
   return chunks;
 }
 
-// ── Metric categories ─────────────────────────────────────────────────────
+// ── Metric categories (Meta Graph API v20 / v18+ rules) ──────────────────
 //
-// DAY_SERIES   → period=day, returns {values:[{end_time,value}]}
-//                value may be a number (reach, views) or
-//                an object (follows_and_unfollows → {follow:N, unfollow:M})
+// DAY_SERIES    → period=day, returns daily {values:[{end_time, value:number}]}
+//                 reach        — supports any date range ≤30 days per chunk
+//                 follower_count — ONLY last 30 days from today; skip older chunks
 //
-// TOTAL_VALUE  → period=day + metric_type=total_value
-//                returns {total_value:{value:N}} — a single aggregate
-//                No daily breakdown available; stored as one point.
+// TOTAL_VALUE   → period=day + metric_type=total_value
+//                 returns a single {total_value:{value:N}} per chunk (no daily series)
+//                 views, profile_views, website_clicks, total_interactions
+//
+// FOLLOWS_UNFOLLOWS (special total_value with breakdown)
+//                 follows_and_unfollows + metric_type=total_value + breakdown=follow_type
+//                 returns breakdown results with FOLLOW / UNFOLLOW dimension values
 
-const DAY_SERIES_METRICS   = ["reach", "views", "follower_count", "follows_and_unfollows"];
-const TOTAL_VALUE_METRICS  = [
-  "profile_views",
-  "website_clicks",
-  "email_contacts",
-  "get_directions_clicks",
-  "phone_call_clicks",
-  "text_message_clicks",
-];
+const DAY_SERIES_METRICS  = ["reach", "follower_count"];
+const TOTAL_VALUE_METRICS = ["views", "profile_views", "website_clicks", "total_interactions"];
+// Metrics removed in v18+: email_contacts, get_directions_clicks, phone_call_clicks, text_message_clicks
+
+const NOW_SECS = () => Math.floor(Date.now() / 1000);
+const MAX_FOLLOWER_LOOKBACK = 30 * 24 * 3600; // follower_count only works for last 30 days
 
 // ── Core fetch function ───────────────────────────────────────────────────
 
@@ -66,35 +67,34 @@ async function fetchInsights(
 }> {
   const result: Record<string, { date: string; value: number }[]> = {};
   const errors: string[] = [];
-  const chunks = chunkRange(since, until);
+  const chunks   = chunkRange(since, until);
+  const endDate  = new Date(until * 1000).toISOString().split("T")[0];
 
-  // ── Day-series metrics ────────────────────────────────────────────────
+  // ── Day-series metrics (reach, follower_count) ────────────────────────
   for (const metric of DAY_SERIES_METRICS) {
     const accumulated: { date: string; value: number }[] = [];
-    const accumFollows:   { date: string; value: number }[] = [];
-    const accumUnfollows: { date: string; value: number }[] = [];
+    const nowSecs = NOW_SECS();
 
     for (const chunk of chunks) {
+      // follower_count only supported for last 30 days — skip older chunks
+      if (metric === "follower_count" && chunk.since < nowSecs - MAX_FOLLOWER_LOOKBACK) {
+        continue;
+      }
       try {
         const url = `${META}/${igId}/insights?metric=${metric}&period=day` +
                     `&since=${chunk.since}&until=${chunk.until}&access_token=${token}`;
         const res  = await fetch(url);
         const data = await res.json();
-
         if (data.error) {
           errors.push(`[${metric}] ${data.error.message} (code ${data.error.code})`);
-          break; // skip remaining chunks for this metric
+          break;
         }
-
         for (const item of (data.data ?? [])) {
           for (const v of (item.values ?? [])) {
-            const date = v.end_time?.split("T")[0] ?? "";
-            if (metric === "follows_and_unfollows") {
-              accumFollows.push({   date, value: (v.value as { follow?: number; unfollow?: number })?.follow   ?? 0 });
-              accumUnfollows.push({ date, value: (v.value as { follow?: number; unfollow?: number })?.unfollow ?? 0 });
-            } else {
-              accumulated.push({ date, value: typeof v.value === "number" ? v.value : 0 });
-            }
+            accumulated.push({
+              date:  v.end_time?.split("T")[0] ?? "",
+              value: typeof v.value === "number" ? v.value : 0,
+            });
           }
         }
       } catch (e) {
@@ -102,12 +102,7 @@ async function fetchInsights(
       }
     }
 
-    if (metric === "follows_and_unfollows") {
-      if (accumFollows.length)   result["follows"]   = accumFollows;
-      if (accumUnfollows.length) result["unfollows"] = accumUnfollows;
-    } else if (accumulated.length) {
-      result[metric] = accumulated;
-    }
+    if (accumulated.length) result[metric] = accumulated;
   }
 
   // ── Total-value metrics ───────────────────────────────────────────────
@@ -121,26 +116,72 @@ async function fetchInsights(
                     `&metric_type=total_value&since=${chunk.since}&until=${chunk.until}&access_token=${token}`;
         const res  = await fetch(url);
         const data = await res.json();
-
         if (data.error) {
           errors.push(`[${metric}] ${data.error.message} (code ${data.error.code})`);
           break;
         }
-
         const val = data.data?.[0]?.total_value?.value;
-        if (typeof val === "number") {
-          grandTotal += val;
-          hasData     = true;
-        }
+        if (typeof val === "number") { grandTotal += val; hasData = true; }
       } catch (e) {
         errors.push(`[${metric}] ${String(e)}`);
       }
     }
 
     if (hasData) {
-      // Store as a single aggregate point (daily breakdown not available for total_value metrics)
-      const endDate = new Date(until * 1000).toISOString().split("T")[0];
       result[metric] = [{ date: endDate, value: grandTotal }];
+    }
+  }
+
+  // ── follows_and_unfollows (total_value + breakdown=follow_type) ───────
+  {
+    let totalFollows   = 0;
+    let totalUnfollows = 0;
+    let hasFollowData  = false;
+
+    for (const chunk of chunks) {
+      try {
+        const url = `${META}/${igId}/insights?metric=follows_and_unfollows` +
+                    `&period=day&metric_type=total_value&breakdown=follow_type` +
+                    `&since=${chunk.since}&until=${chunk.until}&access_token=${token}`;
+        const res  = await fetch(url);
+        const data = await res.json();
+
+        if (data.error) {
+          errors.push(`[follows_and_unfollows] ${data.error.message} (code ${data.error.code})`);
+          break;
+        }
+
+        // Parse breakdown: results array with dimension_values ["FOLLOW"] / ["UNFOLLOW"]
+        const breakdowns = data.data?.[0]?.total_value?.breakdowns ?? [];
+        for (const bd of breakdowns) {
+          for (const r of (bd.results ?? [])) {
+            const dim = (r.dimension_values?.[0] ?? "").toUpperCase();
+            if      (dim === "FOLLOW")   { totalFollows   += r.value ?? 0; hasFollowData = true; }
+            else if (dim === "UNFOLLOW") { totalUnfollows += r.value ?? 0; hasFollowData = true; }
+          }
+        }
+        // Fallback: some API versions return total_value.value directly (net)
+        if (!hasFollowData && typeof data.data?.[0]?.total_value?.value === "number") {
+          totalFollows  = data.data[0].total_value.value;
+          hasFollowData = true;
+        }
+      } catch (e) {
+        errors.push(`[follows_and_unfollows] ${String(e)}`);
+      }
+    }
+
+    if (hasFollowData) {
+      result["follows"]   = [{ date: endDate, value: totalFollows }];
+      result["unfollows"] = [{ date: endDate, value: totalUnfollows }];
+    } else {
+      // Final fallback: derive from follower_count daily deltas
+      const deltas = result["follower_count"] ?? [];
+      const posSum = deltas.filter(d => d.value > 0).reduce((s, d) => s + d.value, 0);
+      const negSum = deltas.filter(d => d.value < 0).reduce((s, d) => s + Math.abs(d.value), 0);
+      if (posSum > 0 || negSum > 0) {
+        result["follows"]   = [{ date: endDate, value: posSum }];
+        result["unfollows"] = [{ date: endDate, value: negSum }];
+      }
     }
   }
 
@@ -257,36 +298,28 @@ function buildTotals(
 ) {
   const sum = (key: string) => (insights[key] ?? []).reduce((s, d) => s + d.value, 0);
 
-  // follows_and_unfollows gives explicit follow/unfollow counts
-  const follows   = sum("follows");
-  const unfollows = sum("unfollows");
+  const follows      = sum("follows");
+  const unfollows    = sum("unfollows");
+  const netFollowers = follows - unfollows;
 
-  // Fall back to follower_count daily deltas when follows_and_unfollows is unavailable
-  const followerDeltas  = insights["follower_count"] ?? [];
-  const deltaFollows    = followerDeltas.filter(d => d.value > 0).reduce((s, d) => s + d.value, 0);
-  const deltaUnfollows  = followerDeltas.filter(d => d.value < 0).reduce((s, d) => s + Math.abs(d.value), 0);
-
-  const finalFollows   = follows   > 0 ? follows   : deltaFollows;
-  const finalUnfollows = unfollows > 0 ? unfollows : deltaUnfollows;
-  const netFollowers   = finalFollows - finalUnfollows;
-
-  const contact = sum("email_contacts") + sum("get_directions_clicks")
-                + sum("phone_call_clicks") + sum("text_message_clicks");
+  // total_interactions from API is preferred; fall back to media like+comment sum
+  const apiInteractions = sum("total_interactions");
+  const contentInteractions = apiInteractions > 0 ? apiInteractions : mediaStats.interactions;
 
   return {
-    views:                sum("views"),              // impressions → views (API v18+)
-    reach:                sum("reach"),
-    contentInteractions:  mediaStats.interactions,
-    linkClicks:           sum("website_clicks"),
-    profileVisits:        sum("profile_views"),
-    follows:              finalFollows,
-    unfollows:            finalUnfollows,
+    views:               sum("views"),
+    reach:               sum("reach"),
+    contentInteractions,
+    linkClicks:          sum("website_clicks"),
+    profileVisits:       sum("profile_views"),
+    follows,
+    unfollows,
     netFollowers,
-    totalContact:         contact || null,
-    postsPublished:       mediaStats.total,
-    videoPosts:           mediaStats.video,
-    staticPosts:          mediaStats.image,
-    carouselPosts:        mediaStats.carousel,
+    totalContact:        null, // email_contacts / phone_call_clicks removed from Meta API v18+
+    postsPublished:      mediaStats.total,
+    videoPosts:          mediaStats.video,
+    staticPosts:         mediaStats.image,
+    carouselPosts:       mediaStats.carousel,
   };
 }
 
