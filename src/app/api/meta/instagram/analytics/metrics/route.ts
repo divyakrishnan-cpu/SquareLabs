@@ -539,10 +539,19 @@ export async function GET(req: NextRequest) {
     const { errors: _e, ...interactionValues } = interactionBreakdown;
     currentTotals = { ...buildTotals(insightResult.data, media), ...interactionValues };
   } else {
-    // Fetch media + interaction breakdown in parallel (not stored per-day in DB)
+    // IMPORTANT: DB snapshots may only cover a subset of the requested range
+    // (e.g. daily sync started 5 days ago but user requested 30 days).
+    // We MUST scope interaction breakdown and media to the SAME dates as the DB rows
+    // so all metrics cover the identical time window and can be compared fairly.
+    const dbFirstDate = new Date(dbSnapshots[0].date);
+    const dbLastDate  = new Date(dbSnapshots[dbSnapshots.length - 1].date);
+    dbLastDate.setHours(23, 59, 0, 0);
+    const dbSinceTs = Math.floor(dbFirstDate.getTime() / 1000);
+    const dbUntilTs = Math.floor(dbLastDate.getTime()  / 1000);
+
     const [media, interactionBreakdown] = await Promise.all([
-      fetchMediaStats(igId, token, fromDate, toDate),
-      fetchInteractionTotals(igId, sinceTs, untilTs, token),
+      fetchMediaStats(igId, token, dbFirstDate, dbLastDate),
+      fetchInteractionTotals(igId, dbSinceTs, dbUntilTs, token),
     ]);
     currentMedia      = media;
     interactionErrors = interactionBreakdown.errors;
@@ -572,7 +581,16 @@ export async function GET(req: NextRequest) {
     });
 
     if (compDbSnapshots.length > 0) {
-      const compInteractionBreakdown = await fetchInteractionTotals(igId, compSince, compUntil, token);
+      // Scope to actual DB snapshot dates, same as current period fix above
+      const compDbFirst = new Date(compDbSnapshots[0].date);
+      const compDbLast  = new Date(compDbSnapshots[compDbSnapshots.length - 1].date);
+      compDbLast.setHours(23, 59, 0, 0);
+      const compInteractionBreakdown = await fetchInteractionTotals(
+        igId,
+        Math.floor(compDbFirst.getTime() / 1000),
+        Math.floor(compDbLast.getTime()  / 1000),
+        token,
+      );
       compDaily  = snapshotsToDailySeries(compDbSnapshots);
       compTotals = { ...buildTotalsFromSnapshots(compDbSnapshots), ...compInteractionBreakdown };
     } else {
@@ -600,6 +618,10 @@ export async function GET(req: NextRequest) {
     platform,
     dataSource: hasDbData ? "database" : "meta_api",
     dbDaysStored: dbSnapshots.length,
+    dbActualRange: hasDbData ? {
+      from: dbSnapshots[0].date.toISOString().split("T")[0],
+      to:   dbSnapshots[dbSnapshots.length - 1].date.toISOString().split("T")[0],
+    } : null,
     accountInfo: {
       igId,
       handle:         `@${acctData.username || intg.instagramHandle || ""}`,

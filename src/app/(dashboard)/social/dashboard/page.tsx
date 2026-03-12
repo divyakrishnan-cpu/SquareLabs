@@ -75,6 +75,7 @@ interface MetricsData {
   interactionErrors?: string[];
   dataSource?: "database" | "meta_api";
   dbDaysStored?: number;
+  dbActualRange?: { from: string; to: string } | null;
 }
 
 interface VideoItem {
@@ -942,6 +943,32 @@ export default function SocialDashboardPage() {
               )}
             </div>
           </div>
+
+          {/* ── Partial DB coverage warning ───────────────────────────────── */}
+          {(() => {
+            if (!data.dbActualRange) return null;
+            const requestedFrom = data.current.period.from;
+            const requestedTo   = data.current.period.to;
+            const isPartial     = data.dbActualRange.from > requestedFrom || data.dbActualRange.to < requestedTo;
+            if (!isPartial) return null;
+            return (
+              <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+                <div className="flex items-start gap-3">
+                  <span className="text-orange-500 text-lg shrink-0">📅</span>
+                  <div>
+                    <p className="text-sm font-semibold text-orange-800 mb-1">
+                      Data available from {fmtDate(data.dbActualRange.from)} – {fmtDate(data.dbActualRange.to)} only
+                    </p>
+                    <p className="text-xs text-orange-700">
+                      You selected {fmtDate(requestedFrom)} – {fmtDate(requestedTo)} but the daily sync only has {data.dbDaysStored} day{data.dbDaysStored !== 1 ? "s" : ""} stored so far.
+                      All metrics on this page reflect <strong>{data.dbActualRange.from} → {data.dbActualRange.to}</strong> so they can be compared fairly.
+                      Historical data will accumulate automatically as the daily sync runs each night.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ── Insight errors warning ────────────────────────────────────── */}
           {data.insightErrors && data.insightErrors.length > 0 && (
