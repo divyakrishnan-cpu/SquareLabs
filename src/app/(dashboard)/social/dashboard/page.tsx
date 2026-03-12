@@ -426,24 +426,22 @@ const METRIC_DEFS: MetricDef[] = [
     label: "Reach",                   icon: <Globe size={14} />,             color: "text-blue-500",
     description: "Unique accounts that saw your content at least once. Each person counted once, no matter how many times they viewed." },
 
-  // ── Engagement on new posts ────────────────────────────────────────────────
-  { key: "contentInteractions", dailyKey: "total_interactions",  section: "Engagement on New Posts",
-    label: "Content Interactions",    icon: <Heart size={14} />,             color: "text-rose-500",
-    description: "Meta's official aggregate for interactions (likes + comments + saves + shares) on posts PUBLISHED within this date range only. This is why it may be lower than the individual like/comment counts below." },
-
-  // ── All-account activity ───────────────────────────────────────────────────
-  { key: "likes",               dailyKey: "likes",               section: "All-Account Activity (this period)",
-    label: "Likes",                   icon: <Heart size={14} />,             color: "text-rose-400",
-    description: "Total likes received on ALL your posts during this period — including older posts still getting engagement. This is why it can exceed Content Interactions, which only counts new posts." },
+  // ── Engagement ────────────────────────────────────────────────────────────
+  { key: "contentInteractions", dailyKey: "total_interactions",  section: "Engagement",
+    label: "Total Interactions",      icon: <Heart size={14} />,             color: "text-rose-500",
+    description: "Sum of all interactions (likes + comments + saves + shares) on your posts during this period, as reported by Meta Insights API." },
+  { key: "likes",               dailyKey: "likes",
+    label: "  ↳ Likes",               icon: <Heart size={12} />,             color: "text-rose-400",
+    description: "Likes received on your posts during this period." },
   { key: "comments",            dailyKey: "comments",
-    label: "Comments",                icon: <MessageCircle size={14} />,     color: "text-blue-400",
-    description: "Total comments received on ALL your posts during this period — including older posts. May exceed Content Interactions for the same reason." },
+    label: "  ↳ Comments",            icon: <MessageCircle size={12} />,     color: "text-blue-400",
+    description: "Comments on your posts during this period." },
   { key: "saves",               dailyKey: "saves",
-    label: "Saves",                   icon: <Bookmark size={14} />,          color: "text-amber-400",
-    description: "Total saves on ALL your posts during this period, including older content." },
+    label: "  ↳ Saves",               icon: <Bookmark size={12} />,          color: "text-amber-400",
+    description: "Times people saved your posts during this period." },
   { key: "shares",              dailyKey: "shares",
-    label: "Shares",                  icon: <Share2 size={14} />,            color: "text-green-400",
-    description: "Total shares of ALL your posts during this period (DM sends, Story shares, etc.), including older content." },
+    label: "  ↳ Shares",              icon: <Share2 size={12} />,            color: "text-green-400",
+    description: "Times your posts were shared (DMs, Story shares) during this period." },
 
   // ── Profile & Discovery ───────────────────────────────────────────────────
   { key: "linkClicks",          dailyKey: "website_clicks",      section: "Profile & Discovery",
@@ -1050,11 +1048,14 @@ export default function SocialDashboardPage() {
                     )}
                     <button
                       onClick={() => setGraphMetric(m)}
-                      className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors text-left group border-b border-gray-50"
+                      className={cn(
+                        "w-full flex items-center gap-4 py-3 hover:bg-gray-50 transition-colors text-left group border-b border-gray-50",
+                        m.label.startsWith("  ↳") ? "pl-10 pr-5 bg-gray-50/50" : "px-5",
+                      )}
                     >
                       <span className={cn("shrink-0", m.color)}>{m.icon}</span>
-                      <span className="flex-1 flex items-center gap-1.5 text-sm text-gray-700">
-                        {m.label}
+                      <span className={cn("flex-1 flex items-center gap-1.5 text-gray-700", m.label.startsWith("  ↳") ? "text-xs text-gray-500" : "text-sm")}>
+                        {m.label.replace(/^\s+↳\s*/, "↳ ")}
                         {/* (i) tooltip */}
                         <span
                           className="relative shrink-0"
@@ -1069,7 +1070,7 @@ export default function SocialDashboardPage() {
                           </span>
                         </span>
                       </span>
-                      <span className="text-sm font-bold text-gray-900 w-20 text-right">
+                      <span className={cn("font-semibold text-gray-900 w-20 text-right", m.label.startsWith("  ↳") ? "text-xs" : "text-sm font-bold")}>
                         {fmtNum(curr)}
                       </span>
                       {data.comparison && (
