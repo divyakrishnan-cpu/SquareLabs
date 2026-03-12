@@ -189,6 +189,48 @@ async function fetchInsights(
   return { data: result, errors };
 }
 
+// ── Interaction breakdown (likes / comments / saves / shares) ─────────────
+// These are not stored in SocialMetricSnapshot, so we always fetch them live
+// from the Insights API even when DB data is available for other metrics.
+
+async function fetchInteractionTotals(
+  igId:  string,
+  since: number,
+  until: number,
+  token: string,
+): Promise<{ likes: number; comments: number; saves: number; shares: number; errors: string[] }> {
+  const metrics = ["likes", "comments", "saves", "shares"] as const;
+  const result  = { likes: 0, comments: 0, saves: 0, shares: 0, errors: [] as string[] };
+  const chunks  = chunkRange(since, until);
+
+  await Promise.all(
+    metrics.map(async (metric) => {
+      let total    = 0;
+      let hasError = false;
+      for (const chunk of chunks) {
+        try {
+          const url = `${META}/${igId}/insights?metric=${metric}&period=day` +
+                      `&metric_type=total_value&since=${chunk.since}&until=${chunk.until}&access_token=${token}`;
+          const res  = await fetch(url);
+          const data = await res.json();
+          if (data.error) {
+            result.errors.push(`[${metric}] ${data.error.message} (code ${data.error.code})`);
+            hasError = true;
+            break;
+          }
+          total += data.data?.[0]?.total_value?.value ?? 0;
+        } catch (e) {
+          result.errors.push(`[${metric}] ${String(e)}`);
+          hasError = true;
+        }
+      }
+      if (!hasError) result[metric] = total;
+    })
+  );
+
+  return result;
+}
+
 // ── Demographics ──────────────────────────────────────────────────────────
 
 async function fetchDemographics(igId: string, token: string) {
@@ -246,7 +288,7 @@ async function fetchMediaStats(
       `${META}/${igId}/media?fields=id,media_type,timestamp,like_count,comments_count,permalink,thumbnail_url,media_url,caption&limit=100&access_token=${token}`
     );
     const data = await res.json();
-    if (data.error) return { total: 0, video: 0, image: 0, carousel: 0, interactions: 0, topMedia: [] };
+    if (data.error) return { total: 0, video: 0, image: 0, carousel: 0, interactions: 0, likes: 0, comments: 0, topMedia: [] };
 
     const sinceStr = since.toISOString().split("T")[0];
     const untilStr = until.toISOString().split("T")[0];
@@ -256,13 +298,15 @@ async function fetchMediaStats(
       return d >= sinceStr && d <= untilStr;
     });
 
-    let video = 0, image = 0, carousel = 0, interactions = 0;
+    let video = 0, image = 0, carousel = 0, interactions = 0, mediaLikes = 0, mediaComments = 0;
     for (const m of inRange) {
       const type = m.media_type?.toUpperCase() ?? "";
       if (type === "VIDEO" || type === "REEL") video++;
       else if (type === "CAROUSEL_ALBUM")      carousel++;
       else image++;
-      interactions += (m.like_count || 0) + (m.comments_count || 0);
+      mediaLikes    += (m.like_count     || 0);
+      mediaComments += (m.comments_count || 0);
+      interactions  += (m.like_count || 0) + (m.comments_count || 0);
     }
 
     const topMedia = [...inRange]
@@ -285,9 +329,9 @@ async function fetchMediaStats(
         comments:  m.comments_count || 0,
       }));
 
-    return { total: inRange.length, video, image, carousel, interactions, topMedia };
+    return { total: inRange.length, video, image, carousel, interactions, likes: mediaLikes, comments: mediaComments, topMedia };
   } catch {
-    return { total: 0, video: 0, image: 0, carousel: 0, interactions: 0, topMedia: [] };
+    return { total: 0, video: 0, image: 0, carousel: 0, interactions: 0, likes: 0, comments: 0, topMedia: [] };
   }
 }
 
@@ -476,24 +520,50 @@ export async function GET(req: NextRequest) {
   // ── Fall back to Meta API for periods not yet in DB ───────────────────
   let insightErrors: string[] = [];
   type MediaResult = Awaited<ReturnType<typeof fetchMediaStats>>;
-  let currentMedia: MediaResult = { total: 0, video: 0, image: 0, carousel: 0, interactions: 0, topMedia: [] };
+  let currentMedia: MediaResult = { total: 0, video: 0, image: 0, carousel: 0, interactions: 0, likes: 0, comments: 0, topMedia: [] };
+
+  let interactionErrors: string[] = [];
 
   if (!hasDbData) {
-    const [insightResult, media] = await Promise.all([
+    const [insightResult, media, interactionBreakdown] = await Promise.all([
       fetchInsights(igId, sinceTs, untilTs, token),
       fetchMediaStats(igId, token, fromDate, toDate),
+      fetchInteractionTotals(igId, sinceTs, untilTs, token),
     ]);
     currentDaily  = insightResult.data;
     insightErrors = insightResult.errors;
     currentMedia  = media;
-    currentTotals = buildTotals(insightResult.data, media);
+    interactionErrors = interactionBreakdown.errors;
+    // Fallback: if Insights API didn't return likes/comments, use sums from media endpoint
+    const mergedInteractions = {
+      likes:    interactionBreakdown.likes    > 0 ? interactionBreakdown.likes    : media.likes,
+      comments: interactionBreakdown.comments > 0 ? interactionBreakdown.comments : media.comments,
+      saves:    interactionBreakdown.saves,
+      shares:   interactionBreakdown.shares,
+    };
+    currentTotals = { ...buildTotals(insightResult.data, media), ...mergedInteractions };
   } else {
-    // Still fetch media for post counts and top videos (not stored in DB yet)
-    currentMedia = await fetchMediaStats(igId, token, fromDate, toDate);
-    // Patch post counts from live media if DB values are zero
-    if (currentTotals && currentTotals.postsPublished === 0 && currentMedia.total > 0) {
-      currentTotals = { ...currentTotals, postsPublished: currentMedia.total, videoPosts: currentMedia.video, staticPosts: currentMedia.image };
-    }
+    // Fetch media + interaction breakdown in parallel (not stored per-day in DB)
+    const [media, interactionBreakdown] = await Promise.all([
+      fetchMediaStats(igId, token, fromDate, toDate),
+      fetchInteractionTotals(igId, sinceTs, untilTs, token),
+    ]);
+    currentMedia      = media;
+    interactionErrors = interactionBreakdown.errors;
+    // Fallback: if Insights API didn't return likes/comments, use sums from media endpoint
+    const mergedInteractions = {
+      likes:    interactionBreakdown.likes    > 0 ? interactionBreakdown.likes    : media.likes,
+      comments: interactionBreakdown.comments > 0 ? interactionBreakdown.comments : media.comments,
+      saves:    interactionBreakdown.saves,
+      shares:   interactionBreakdown.shares,
+    };
+    currentTotals = {
+      ...currentTotals!,
+      ...mergedInteractions,
+      ...(currentTotals!.postsPublished === 0 && media.total > 0
+        ? { postsPublished: media.total, videoPosts: media.video, staticPosts: media.image }
+        : {}),
+    };
   }
 
   if (!currentTotals) currentTotals = buildTotals(currentDaily, currentMedia);
@@ -503,23 +573,26 @@ export async function GET(req: NextRequest) {
   let compDaily:   Record<string, { date: string; value: number }[]> = {};
 
   if (compFromDate && compToDate) {
+    const compSince = Math.floor(compFromDate.getTime() / 1000);
+    const compUntil = Math.floor(compToDate.getTime()   / 1000);
+
     const compDbSnapshots = await prisma.socialMetricSnapshot.findMany({
       where: { vertical: dbVertical, platform: "INSTAGRAM", date: { gte: compFromDate, lte: compToDate } },
       orderBy: { date: "asc" },
     });
 
     if (compDbSnapshots.length > 0) {
+      const compInteractionBreakdown = await fetchInteractionTotals(igId, compSince, compUntil, token);
       compDaily  = snapshotsToDailySeries(compDbSnapshots);
-      compTotals = buildTotalsFromSnapshots(compDbSnapshots);
+      compTotals = { ...buildTotalsFromSnapshots(compDbSnapshots), ...compInteractionBreakdown };
     } else {
-      const compSince = Math.floor(compFromDate.getTime() / 1000);
-      const compUntil = Math.floor(compToDate.getTime()   / 1000);
-      const [ci, cm]  = await Promise.all([
+      const [ci, cm, compInteractionBreakdown] = await Promise.all([
         fetchInsights(igId, compSince, compUntil, token),
         fetchMediaStats(igId, token, compFromDate, compToDate),
+        fetchInteractionTotals(igId, compSince, compUntil, token),
       ]);
       compDaily  = ci.data;
-      compTotals = buildTotals(ci.data, cm);
+      compTotals = { ...buildTotals(ci.data, cm), ...compInteractionBreakdown };
     }
   }
 
@@ -556,6 +629,7 @@ export async function GET(req: NextRequest) {
     } : null,
     demographics,
     topVideosLastWeek: lastWeekMedia.topMedia,
-    insightErrors: insightErrors.length > 0 ? insightErrors : undefined,
+    insightErrors:     insightErrors.length     > 0 ? insightErrors     : undefined,
+    interactionErrors: interactionErrors.length > 0 ? interactionErrors : undefined,
   });
 }

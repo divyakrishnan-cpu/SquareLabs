@@ -72,6 +72,7 @@ interface MetricsData {
   } | null;
   topVideosLastWeek: VideoItem[];
   insightErrors?: string[];
+  interactionErrors?: string[];
   dataSource?: "database" | "meta_api";
   dbDaysStored?: number;
 }
@@ -921,6 +922,31 @@ export default function SocialDashboardPage() {
                     <summary className="cursor-pointer font-medium">View API errors</summary>
                     <div className="mt-1 space-y-0.5 font-mono">
                       {data.insightErrors.slice(0, 5).map((e, i) => <p key={i}>{e}</p>)}
+                    </div>
+                  </details>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Interaction breakdown errors (likes/comments/saves/shares) ──── */}
+          {data.interactionErrors && data.interactionErrors.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <div className="flex items-start gap-3">
+                <span className="text-blue-500 text-lg shrink-0">ℹ️</span>
+                <div>
+                  <p className="text-sm font-semibold text-blue-800 mb-1">
+                    Likes / Comments / Saves / Shares — partial data
+                  </p>
+                  <p className="text-xs text-blue-700 mb-2">
+                    Some interaction breakdown metrics could not be fetched from the Insights API for this account.
+                    Likes and Comments are shown using per-post media counts as a fallback.
+                    Saves and Shares require <strong>instagram_manage_insights</strong> permission.
+                  </p>
+                  <details className="text-[10px] text-blue-600">
+                    <summary className="cursor-pointer font-medium">View errors</summary>
+                    <div className="mt-1 space-y-0.5 font-mono">
+                      {data.interactionErrors.map((e, i) => <p key={i}>{e}</p>)}
                     </div>
                   </details>
                 </div>
