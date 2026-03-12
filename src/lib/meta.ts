@@ -20,7 +20,8 @@ const SCOPES = [
   "pages_show_list",
   "pages_read_engagement",
   "business_management",
-  "instagram_manage_insights",
+  "instagram_basic",           // required to read instagram_business_account field
+  "instagram_manage_insights", // required for insights data
 ].join(",");
 
 // ── Brand / Vertical auto-detection ──────────────────────────────────────
