@@ -12,7 +12,7 @@ import {
   Bookmark, Share2, Play, Eye, ExternalLink, QrCode, X,
   RefreshCw, Instagram, ChevronRight, MapPin, Globe,
   Lightbulb, Calendar, BarChart2, Target, Star,
-  MousePointerClick, UserCheck, UserMinus, Phone, Clapperboard,
+  MousePointerClick, UserCheck, UserMinus, Clapperboard,
   Image, AlignJustify,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -32,7 +32,6 @@ interface MetricsTotals {
   follows:             number;
   unfollows:           number;
   netFollowers:        number;
-  totalContact:        number | null;
   postsPublished:      number;
   videoPosts:          number;
   staticPosts:         number;
@@ -417,7 +416,6 @@ const METRIC_DEFS: MetricDef[] = [
   { key: "follows",             dailyKey: "follows",             label: "Follows",                    icon: <UserCheck size={14} />,        color: "text-green-500" },
   { key: "unfollows",           dailyKey: "unfollows",           label: "Unfollows",                  icon: <UserMinus size={14} />,        color: "text-red-500" },
   { key: "netFollowers",        dailyKey: "follows",             label: "Net Followers",              icon: <TrendingUp size={14} />,       color: "text-emerald-500" },
-  { key: "totalContact",        dailyKey: "phone_call_clicks",   label: "Total Contact Actions",      icon: <Phone size={14} />,            color: "text-orange-500" },
   { key: "postsPublished",      dailyKey: "views",               label: "Total Content Published",    icon: <AlignJustify size={14} />,     color: "text-gray-500" },
   { key: "videoPosts",          dailyKey: "views",               label: "Video / Reel Content",       icon: <Clapperboard size={14} />,     color: "text-pink-500" },
   { key: "staticPosts",         dailyKey: "views",               label: "Static / Image Content",     icon: <Image size={14} />,            color: "text-amber-500" },

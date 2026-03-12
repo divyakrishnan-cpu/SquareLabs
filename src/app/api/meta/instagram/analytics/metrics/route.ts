@@ -315,7 +315,6 @@ function buildTotals(
     follows,
     unfollows,
     netFollowers,
-    totalContact:        null, // email_contacts / phone_call_clicks removed from Meta API v18+
     postsPublished:      mediaStats.total,
     videoPosts:          mediaStats.video,
     staticPosts:         mediaStats.image,
