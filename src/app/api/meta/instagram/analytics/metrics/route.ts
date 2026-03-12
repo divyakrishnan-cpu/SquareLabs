@@ -17,45 +17,137 @@ import { getServerSession }          from "next-auth";
 import { authOptions }               from "@/lib/auth";
 import { db as prisma }              from "@/lib/db";
 
-const META = "https://graph.facebook.com/v20.0";
+const META          = "https://graph.facebook.com/v20.0";
+const MAX_CHUNK_SEC = 30 * 24 * 3600; // Meta hard limit: 30 days per insights call
 
-// ── Helpers ───────────────────────────────────────────────────────────────
+// ── Split a time range into ≤30-day chunks ────────────────────────────────
+
+function chunkRange(since: number, until: number): { since: number; until: number }[] {
+  const chunks: { since: number; until: number }[] = [];
+  let s = since;
+  while (s < until) {
+    const u = Math.min(s + MAX_CHUNK_SEC - 1, until);
+    chunks.push({ since: s, until: u });
+    s = u + 1;
+  }
+  return chunks;
+}
+
+// ── Metric categories ─────────────────────────────────────────────────────
+//
+// DAY_SERIES   → period=day, returns {values:[{end_time,value}]}
+//                value may be a number (reach, views) or
+//                an object (follows_and_unfollows → {follow:N, unfollow:M})
+//
+// TOTAL_VALUE  → period=day + metric_type=total_value
+//                returns {total_value:{value:N}} — a single aggregate
+//                No daily breakdown available; stored as one point.
+
+const DAY_SERIES_METRICS   = ["reach", "views", "follower_count", "follows_and_unfollows"];
+const TOTAL_VALUE_METRICS  = [
+  "profile_views",
+  "website_clicks",
+  "email_contacts",
+  "get_directions_clicks",
+  "phone_call_clicks",
+  "text_message_clicks",
+];
+
+// ── Core fetch function ───────────────────────────────────────────────────
 
 async function fetchInsights(
-  igId: string,
-  metrics: string[],
+  igId:  string,
   since: number,
   until: number,
-  token: string
+  token: string,
 ): Promise<{
   data:   Record<string, { date: string; value: number }[]>;
   errors: string[];
 }> {
   const result: Record<string, { date: string; value: number }[]> = {};
   const errors: string[] = [];
+  const chunks = chunkRange(since, until);
 
-  // Fetch metrics one at a time — some metrics (e.g. follower_count) fail in batch with others
-  for (const metric of metrics) {
-    try {
-      const url = `${META}/${igId}/insights?metric=${metric}&period=day&since=${since}&until=${until}&access_token=${token}`;
-      const res  = await fetch(url);
-      const data = await res.json();
-      if (data.error) {
-        errors.push(`[${metric}] ${data.error.message} (code ${data.error.code})`);
-      } else if (data.data) {
-        for (const item of data.data) {
-          result[item.name] = (item.values ?? []).map((v: { end_time: string; value: number }) => ({
-            date:  v.end_time.split("T")[0],
-            value: v.value ?? 0,
-          }));
+  // ── Day-series metrics ────────────────────────────────────────────────
+  for (const metric of DAY_SERIES_METRICS) {
+    const accumulated: { date: string; value: number }[] = [];
+    const accumFollows:   { date: string; value: number }[] = [];
+    const accumUnfollows: { date: string; value: number }[] = [];
+
+    for (const chunk of chunks) {
+      try {
+        const url = `${META}/${igId}/insights?metric=${metric}&period=day` +
+                    `&since=${chunk.since}&until=${chunk.until}&access_token=${token}`;
+        const res  = await fetch(url);
+        const data = await res.json();
+
+        if (data.error) {
+          errors.push(`[${metric}] ${data.error.message} (code ${data.error.code})`);
+          break; // skip remaining chunks for this metric
         }
+
+        for (const item of (data.data ?? [])) {
+          for (const v of (item.values ?? [])) {
+            const date = v.end_time?.split("T")[0] ?? "";
+            if (metric === "follows_and_unfollows") {
+              accumFollows.push({   date, value: (v.value as { follow?: number; unfollow?: number })?.follow   ?? 0 });
+              accumUnfollows.push({ date, value: (v.value as { follow?: number; unfollow?: number })?.unfollow ?? 0 });
+            } else {
+              accumulated.push({ date, value: typeof v.value === "number" ? v.value : 0 });
+            }
+          }
+        }
+      } catch (e) {
+        errors.push(`[${metric}] ${String(e)}`);
       }
-    } catch (e) {
-      errors.push(`[${metric}] fetch exception: ${String(e)}`);
+    }
+
+    if (metric === "follows_and_unfollows") {
+      if (accumFollows.length)   result["follows"]   = accumFollows;
+      if (accumUnfollows.length) result["unfollows"] = accumUnfollows;
+    } else if (accumulated.length) {
+      result[metric] = accumulated;
     }
   }
+
+  // ── Total-value metrics ───────────────────────────────────────────────
+  for (const metric of TOTAL_VALUE_METRICS) {
+    let grandTotal = 0;
+    let hasData    = false;
+
+    for (const chunk of chunks) {
+      try {
+        const url = `${META}/${igId}/insights?metric=${metric}&period=day` +
+                    `&metric_type=total_value&since=${chunk.since}&until=${chunk.until}&access_token=${token}`;
+        const res  = await fetch(url);
+        const data = await res.json();
+
+        if (data.error) {
+          errors.push(`[${metric}] ${data.error.message} (code ${data.error.code})`);
+          break;
+        }
+
+        const val = data.data?.[0]?.total_value?.value;
+        if (typeof val === "number") {
+          grandTotal += val;
+          hasData     = true;
+        }
+      } catch (e) {
+        errors.push(`[${metric}] ${String(e)}`);
+      }
+    }
+
+    if (hasData) {
+      // Store as a single aggregate point (daily breakdown not available for total_value metrics)
+      const endDate = new Date(until * 1000).toISOString().split("T")[0];
+      result[metric] = [{ date: endDate, value: grandTotal }];
+    }
+  }
+
   return { data: result, errors };
 }
+
+// ── Demographics ──────────────────────────────────────────────────────────
 
 async function fetchDemographics(igId: string, token: string) {
   const metrics = ["audience_gender_age", "audience_city", "audience_country"];
@@ -71,10 +163,9 @@ async function fetchDemographics(igId: string, token: string) {
       byName[item.name] = item.values?.[0]?.value ?? {};
     }
 
-    // Parse age/gender: keys like "M.25-34" → { M: {...}, F: {...} }
-    const ageGender = byName["audience_gender_age"] ?? {};
+    const ageGender    = byName["audience_gender_age"] ?? {};
     const genderTotal: Record<string, number> = {};
-    const ageBuckets: Record<string, number>  = {};
+    const ageBuckets:  Record<string, number> = {};
 
     for (const [key, val] of Object.entries(ageGender)) {
       const [gender, age] = key.split(".");
@@ -100,11 +191,13 @@ async function fetchDemographics(igId: string, token: string) {
   } catch { return null; }
 }
 
+// ── Media stats (posts, interactions) ────────────────────────────────────
+
 async function fetchMediaStats(
-  igId: string,
+  igId:  string,
   token: string,
   since: Date,
-  until: Date
+  until: Date,
 ) {
   try {
     const res  = await fetch(
@@ -125,7 +218,7 @@ async function fetchMediaStats(
     for (const m of inRange) {
       const type = m.media_type?.toUpperCase() ?? "";
       if (type === "VIDEO" || type === "REEL") video++;
-      else if (type === "CAROUSEL_ALBUM") carousel++;
+      else if (type === "CAROUSEL_ALBUM")      carousel++;
       else image++;
       interactions += (m.like_count || 0) + (m.comments_count || 0);
     }
@@ -146,7 +239,7 @@ async function fetchMediaStats(
         thumbnail: m.thumbnail_url || m.media_url || null,
         timestamp: m.timestamp,
         date:      m.timestamp.split("T")[0],
-        likes:     m.like_count    || 0,
+        likes:     m.like_count     || 0,
         comments:  m.comments_count || 0,
       }));
 
@@ -156,28 +249,38 @@ async function fetchMediaStats(
   }
 }
 
-function buildTotals(insights: Record<string, { date: string; value: number }[]>, mediaStats: {
-  total: number; video: number; image: number; carousel: number; interactions: number;
-}) {
-  const sum = (key: string) =>
-    (insights[key] ?? []).reduce((s, d) => s + d.value, 0);
+// ── Build totals from insights + media ───────────────────────────────────
 
-  const followerChanges = insights["follower_count"] ?? [];
-  const follows   = followerChanges.filter(d => d.value > 0).reduce((s, d) => s + d.value, 0);
-  const unfollows = followerChanges.filter(d => d.value < 0).reduce((s, d) => s + Math.abs(d.value), 0);
-  const netFollowers = follows - unfollows;
+function buildTotals(
+  insights:   Record<string, { date: string; value: number }[]>,
+  mediaStats: { total: number; video: number; image: number; carousel: number; interactions: number },
+) {
+  const sum = (key: string) => (insights[key] ?? []).reduce((s, d) => s + d.value, 0);
+
+  // follows_and_unfollows gives explicit follow/unfollow counts
+  const follows   = sum("follows");
+  const unfollows = sum("unfollows");
+
+  // Fall back to follower_count daily deltas when follows_and_unfollows is unavailable
+  const followerDeltas  = insights["follower_count"] ?? [];
+  const deltaFollows    = followerDeltas.filter(d => d.value > 0).reduce((s, d) => s + d.value, 0);
+  const deltaUnfollows  = followerDeltas.filter(d => d.value < 0).reduce((s, d) => s + Math.abs(d.value), 0);
+
+  const finalFollows   = follows   > 0 ? follows   : deltaFollows;
+  const finalUnfollows = unfollows > 0 ? unfollows : deltaUnfollows;
+  const netFollowers   = finalFollows - finalUnfollows;
 
   const contact = sum("email_contacts") + sum("get_directions_clicks")
                 + sum("phone_call_clicks") + sum("text_message_clicks");
 
   return {
-    views:                sum("impressions"),
+    views:                sum("views"),              // impressions → views (API v18+)
     reach:                sum("reach"),
     contentInteractions:  mediaStats.interactions,
     linkClicks:           sum("website_clicks"),
     profileVisits:        sum("profile_views"),
-    follows,
-    unfollows,
+    follows:              finalFollows,
+    unfollows:            finalUnfollows,
     netFollowers,
     totalContact:         contact || null,
     postsPublished:       mediaStats.total,
@@ -200,7 +303,6 @@ export async function GET(req: NextRequest) {
   const vertical = sp.get("vertical") ?? "SY_INDIA";
   const platform = sp.get("platform") ?? "instagram";
 
-  // Default: last 30 days
   const toDate   = sp.get("to")   ? new Date(sp.get("to")!)   : new Date();
   const fromDate = sp.get("from") ? new Date(sp.get("from")!) : (() => {
     const d = new Date(); d.setDate(d.getDate() - 30); return d;
@@ -209,13 +311,14 @@ export async function GET(req: NextRequest) {
   const compToDate   = sp.get("compTo")   ? new Date(sp.get("compTo")!)   : null;
   const compFromDate = sp.get("compFrom") ? new Date(sp.get("compFrom")!) : null;
 
-  toDate.setHours(23, 59, 59, 999);
-  if (compToDate) compToDate.setHours(23, 59, 59, 999);
+  // Set to end-of-day but keep within the day to avoid pushing over 30-day Meta limit
+  toDate.setHours(23, 59, 0, 0);
+  if (compToDate) compToDate.setHours(23, 59, 0, 0);
 
   const sinceTs = Math.floor(fromDate.getTime() / 1000);
   const untilTs = Math.floor(toDate.getTime()   / 1000);
 
-  // Non-Instagram platforms: return stub (not yet connected)
+  // Non-Instagram platforms: return stub
   if (platform !== "instagram") {
     return NextResponse.json({
       vertical, platform,
@@ -244,22 +347,15 @@ export async function GET(req: NextRequest) {
   const igId  = intg.instagramAccountId!;
   const token = (intg.userAccessToken || intg.pageAccessToken) as string;
 
-  // ── Fetch account info ──────────────────────────────────────────────────
+  // ── Account info ──────────────────────────────────────────────────────
   const acctRes  = await fetch(
     `${META}/${igId}?fields=id,username,name,followers_count,profile_picture_url&access_token=${token}`
   );
   const acctData = await acctRes.json();
 
-  // ── Fetch current period insights ───────────────────────────────────────
-  const INSIGHT_METRICS = [
-    "reach", "impressions", "profile_views",
-    "follower_count", "website_clicks",
-    "email_contacts", "get_directions_clicks",
-    "phone_call_clicks", "text_message_clicks",
-  ];
-
+  // ── Current period ────────────────────────────────────────────────────
   const [insightResult, currentMedia] = await Promise.all([
-    fetchInsights(igId, INSIGHT_METRICS, sinceTs, untilTs, token),
+    fetchInsights(igId, sinceTs, untilTs, token),
     fetchMediaStats(igId, token, fromDate, toDate),
   ]);
 
@@ -267,25 +363,25 @@ export async function GET(req: NextRequest) {
   const insightErrors   = insightResult.errors;
   const currentTotals   = buildTotals(currentInsights, currentMedia);
 
-  // ── Fetch comparison period insights ────────────────────────────────────
-  let compTotals = null;
+  // ── Comparison period ─────────────────────────────────────────────────
+  let compTotals   = null;
   let compInsights: Record<string, { date: string; value: number }[]> = {};
 
   if (compFromDate && compToDate) {
     const compSince = Math.floor(compFromDate.getTime() / 1000);
     const compUntil = Math.floor(compToDate.getTime()   / 1000);
-    const [ci, cm] = await Promise.all([
-      fetchInsights(igId, INSIGHT_METRICS, compSince, compUntil, token),
+    const [ci, cm]  = await Promise.all([
+      fetchInsights(igId, compSince, compUntil, token),
       fetchMediaStats(igId, token, compFromDate, compToDate),
     ]);
     compInsights = ci.data;
     compTotals   = buildTotals(ci.data, cm);
   }
 
-  // ── Demographics ────────────────────────────────────────────────────────
+  // ── Demographics ──────────────────────────────────────────────────────
   const demographics = await fetchDemographics(igId, token);
 
-  // ── Last 7 days top media ────────────────────────────────────────────────
+  // ── Top videos last 7 days ────────────────────────────────────────────
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   const lastWeekMedia = await fetchMediaStats(igId, token, sevenDaysAgo, new Date());
@@ -302,18 +398,17 @@ export async function GET(req: NextRequest) {
       profilePicture: acctData.profile_picture_url || intg.profilePictureUrl || null,
     },
     current: {
-      period:   { from: fromDate.toISOString().split("T")[0], to: toDate.toISOString().split("T")[0] },
-      totals:   currentTotals,
-      daily:    currentInsights,
+      period: { from: fromDate.toISOString().split("T")[0], to: toDate.toISOString().split("T")[0] },
+      totals: currentTotals,
+      daily:  currentInsights,
     },
     comparison: compTotals ? {
-      period:  { from: compFromDate!.toISOString().split("T")[0], to: compToDate!.toISOString().split("T")[0] },
-      totals:  compTotals,
-      daily:   compInsights,
+      period: { from: compFromDate!.toISOString().split("T")[0], to: compToDate!.toISOString().split("T")[0] },
+      totals: compTotals,
+      daily:  compInsights,
     } : null,
     demographics,
     topVideosLastWeek: lastWeekMedia.topMedia,
-    // Debug field — shows any errors from the Instagram Insights API
     insightErrors: insightErrors.length > 0 ? insightErrors : undefined,
   });
 }

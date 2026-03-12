@@ -409,18 +409,18 @@ interface MetricDef {
 }
 
 const METRIC_DEFS: MetricDef[] = [
-  { key: "views",               dailyKey: "impressions",         label: "Views (Impressions)",        icon: <Eye size={14} />,             color: "text-indigo-500" },
-  { key: "reach",               dailyKey: "reach",               label: "Reach",                      icon: <Globe size={14} />,           color: "text-blue-500" },
-  { key: "contentInteractions", dailyKey: "impressions",         label: "Content Interactions",       icon: <Heart size={14} />,           color: "text-rose-500" },
-  { key: "linkClicks",          dailyKey: "website_clicks",      label: "Link Clicks",                icon: <MousePointerClick size={14} />,color: "text-cyan-500" },
-  { key: "profileVisits",       dailyKey: "profile_views",       label: "Profile Visits",             icon: <Users size={14} />,           color: "text-violet-500" },
-  { key: "follows",             dailyKey: "follower_count",      label: "Follows",                    icon: <UserCheck size={14} />,       color: "text-green-500" },
-  { key: "unfollows",           dailyKey: "follower_count",      label: "Unfollows",                  icon: <UserMinus size={14} />,       color: "text-red-500" },
-  { key: "netFollowers",        dailyKey: "follower_count",      label: "Net Followers",              icon: <TrendingUp size={14} />,      color: "text-emerald-500" },
-  { key: "totalContact",        dailyKey: "phone_call_clicks",   label: "Total Contact Actions",      icon: <Phone size={14} />,           color: "text-orange-500" },
-  { key: "postsPublished",      dailyKey: "impressions",         label: "Total Content Published",    icon: <AlignJustify size={14} />,    color: "text-gray-500" },
-  { key: "videoPosts",          dailyKey: "impressions",         label: "Video / Reel Content",       icon: <Clapperboard size={14} />,    color: "text-pink-500" },
-  { key: "staticPosts",         dailyKey: "impressions",         label: "Static / Image Content",     icon: <Image size={14} />,           color: "text-amber-500" },
+  { key: "views",               dailyKey: "views",               label: "Views (Impressions)",        icon: <Eye size={14} />,              color: "text-indigo-500" },
+  { key: "reach",               dailyKey: "reach",               label: "Reach",                      icon: <Globe size={14} />,            color: "text-blue-500" },
+  { key: "contentInteractions", dailyKey: "views",               label: "Content Interactions",       icon: <Heart size={14} />,            color: "text-rose-500" },
+  { key: "linkClicks",          dailyKey: "website_clicks",      label: "Link Clicks",                icon: <MousePointerClick size={14} />, color: "text-cyan-500" },
+  { key: "profileVisits",       dailyKey: "profile_views",       label: "Profile Visits",             icon: <Users size={14} />,            color: "text-violet-500" },
+  { key: "follows",             dailyKey: "follows",             label: "Follows",                    icon: <UserCheck size={14} />,        color: "text-green-500" },
+  { key: "unfollows",           dailyKey: "unfollows",           label: "Unfollows",                  icon: <UserMinus size={14} />,        color: "text-red-500" },
+  { key: "netFollowers",        dailyKey: "follows",             label: "Net Followers",              icon: <TrendingUp size={14} />,       color: "text-emerald-500" },
+  { key: "totalContact",        dailyKey: "phone_call_clicks",   label: "Total Contact Actions",      icon: <Phone size={14} />,            color: "text-orange-500" },
+  { key: "postsPublished",      dailyKey: "views",               label: "Total Content Published",    icon: <AlignJustify size={14} />,     color: "text-gray-500" },
+  { key: "videoPosts",          dailyKey: "views",               label: "Video / Reel Content",       icon: <Clapperboard size={14} />,     color: "text-pink-500" },
+  { key: "staticPosts",         dailyKey: "views",               label: "Static / Image Content",     icon: <Image size={14} />,            color: "text-amber-500" },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
