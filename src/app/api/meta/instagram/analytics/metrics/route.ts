@@ -48,7 +48,8 @@ function chunkRange(since: number, until: number): { since: number; until: numbe
 //                 returns breakdown results with FOLLOW / UNFOLLOW dimension values
 
 const DAY_SERIES_METRICS  = ["reach", "follower_count"];
-const TOTAL_VALUE_METRICS = ["views", "profile_views", "website_clicks", "total_interactions"];
+// likes, comments, saves, shares give per-day breakdowns with total_value
+const TOTAL_VALUE_METRICS = ["views", "profile_views", "website_clicks", "total_interactions", "likes", "comments", "saves", "shares"];
 // Metrics removed in v18+: email_contacts, get_directions_clicks, phone_call_clicks, text_message_clicks
 
 const NOW_SECS = () => Math.floor(Date.now() / 1000);
@@ -310,6 +311,10 @@ function buildTotals(
     views:               sum("views"),
     reach:               sum("reach"),
     contentInteractions,
+    likes:               sum("likes"),
+    comments:            sum("comments"),
+    saves:               sum("saves"),
+    shares:              sum("shares"),
     linkClicks:          sum("website_clicks"),
     profileVisits:       sum("profile_views"),
     follows,
@@ -319,6 +324,71 @@ function buildTotals(
     videoPosts:          mediaStats.video,
     staticPosts:         mediaStats.image,
     carouselPosts:       mediaStats.carousel,
+  };
+}
+
+// ── Build daily series from DB snapshots ─────────────────────────────────
+// Converts stored SocialMetricSnapshot rows into the daily[] format used by
+// the graph modals, giving a proper per-day breakdown for every metric.
+
+function snapshotsToDailySeries(
+  snapshots: {
+    date: Date; views: number; reach: number; interactions: number;
+    linkClicks: number; profileVisits: number; follows: number;
+    unfollows: number; netFollowers: number; followers: number;
+    postsPublished: number; videosPublished: number; staticsPublished: number;
+  }[]
+): Record<string, { date: string; value: number }[]> {
+  const sorted = [...snapshots].sort((a, b) => a.date.getTime() - b.date.getTime());
+  const toArr  = (fn: (s: typeof sorted[0]) => number) =>
+    sorted.map(s => ({ date: s.date.toISOString().split("T")[0], value: fn(s) }));
+
+  return {
+    views:              toArr(s => s.views),
+    reach:              toArr(s => s.reach),
+    total_interactions: toArr(s => s.interactions),
+    website_clicks:     toArr(s => s.linkClicks),
+    profile_views:      toArr(s => s.profileVisits),
+    follows:            toArr(s => s.follows),
+    unfollows:          toArr(s => s.unfollows),
+    follower_count:     toArr(s => s.netFollowers),
+    followers:          toArr(s => s.followers),
+    posts:              toArr(s => s.postsPublished),
+    videos:             toArr(s => s.videosPublished),
+    statics:            toArr(s => s.staticsPublished),
+  };
+}
+
+function buildTotalsFromSnapshots(
+  snapshots: {
+    views: number; reach: number; interactions: number; linkClicks: number;
+    profileVisits: number; follows: number; unfollows: number; netFollowers: number;
+    postsPublished: number; videosPublished: number; staticsPublished: number;
+  }[]
+) {
+  const sum = (fn: (s: typeof snapshots[0]) => number) =>
+    snapshots.reduce((acc, s) => acc + fn(s), 0);
+
+  const follows   = sum(s => s.follows);
+  const unfollows = sum(s => s.unfollows);
+
+  return {
+    views:               sum(s => s.views),
+    reach:               sum(s => s.reach),
+    contentInteractions: sum(s => s.interactions),
+    likes:               0,  // individual metrics stored in sync going forward
+    comments:            0,
+    saves:               0,
+    shares:              0,
+    linkClicks:          sum(s => s.linkClicks),
+    profileVisits:       sum(s => s.profileVisits),
+    follows,
+    unfollows,
+    netFollowers:        follows - unfollows,
+    postsPublished:      sum(s => s.postsPublished),
+    videoPosts:          sum(s => s.videosPublished),
+    staticPosts:         sum(s => s.staticsPublished),
+    carouselPosts:       0,
   };
 }
 
@@ -378,6 +448,7 @@ export async function GET(req: NextRequest) {
 
   const igId  = intg.instagramAccountId!;
   const token = (intg.userAccessToken || intg.pageAccessToken) as string;
+  const dbVertical = (vertical as "SY_INDIA" | "SY_UAE" | "INTERIOR" | "SQUARE_CONNECT" | "UM");
 
   // ── Account info ──────────────────────────────────────────────────────
   const acctRes  = await fetch(
@@ -385,29 +456,71 @@ export async function GET(req: NextRequest) {
   );
   const acctData = await acctRes.json();
 
-  // ── Current period ────────────────────────────────────────────────────
-  const [insightResult, currentMedia] = await Promise.all([
-    fetchInsights(igId, sinceTs, untilTs, token),
-    fetchMediaStats(igId, token, fromDate, toDate),
-  ]);
+  // ── Try DB first for daily series data ───────────────────────────────
+  // DB gives us proper per-day data even for metrics that Meta only returns as aggregates
+  const dbSnapshots = await prisma.socialMetricSnapshot.findMany({
+    where: {
+      vertical: dbVertical,
+      platform: "INSTAGRAM",
+      date: { gte: fromDate, lte: toDate },
+    },
+    orderBy: { date: "asc" },
+  });
 
-  const currentInsights = insightResult.data;
-  const insightErrors   = insightResult.errors;
-  const currentTotals   = buildTotals(currentInsights, currentMedia);
+  const hasDbData = dbSnapshots.length > 0;
+
+  // Build daily series and totals from DB if available
+  let currentDaily  = hasDbData ? snapshotsToDailySeries(dbSnapshots) : {} as Record<string, { date: string; value: number }[]>;
+  let currentTotals = hasDbData ? buildTotalsFromSnapshots(dbSnapshots) : null;
+
+  // ── Fall back to Meta API for periods not yet in DB ───────────────────
+  let insightErrors: string[] = [];
+  type MediaResult = Awaited<ReturnType<typeof fetchMediaStats>>;
+  let currentMedia: MediaResult = { total: 0, video: 0, image: 0, carousel: 0, interactions: 0, topMedia: [] };
+
+  if (!hasDbData) {
+    const [insightResult, media] = await Promise.all([
+      fetchInsights(igId, sinceTs, untilTs, token),
+      fetchMediaStats(igId, token, fromDate, toDate),
+    ]);
+    currentDaily  = insightResult.data;
+    insightErrors = insightResult.errors;
+    currentMedia  = media;
+    currentTotals = buildTotals(insightResult.data, media);
+  } else {
+    // Still fetch media for post counts and top videos (not stored in DB yet)
+    currentMedia = await fetchMediaStats(igId, token, fromDate, toDate);
+    // Patch post counts from live media if DB values are zero
+    if (currentTotals && currentTotals.postsPublished === 0 && currentMedia.total > 0) {
+      currentTotals = { ...currentTotals, postsPublished: currentMedia.total, videoPosts: currentMedia.video, staticPosts: currentMedia.image };
+    }
+  }
+
+  if (!currentTotals) currentTotals = buildTotals(currentDaily, currentMedia);
 
   // ── Comparison period ─────────────────────────────────────────────────
-  let compTotals   = null;
-  let compInsights: Record<string, { date: string; value: number }[]> = {};
+  let compTotals:  ReturnType<typeof buildTotals> | null = null;
+  let compDaily:   Record<string, { date: string; value: number }[]> = {};
 
   if (compFromDate && compToDate) {
-    const compSince = Math.floor(compFromDate.getTime() / 1000);
-    const compUntil = Math.floor(compToDate.getTime()   / 1000);
-    const [ci, cm]  = await Promise.all([
-      fetchInsights(igId, compSince, compUntil, token),
-      fetchMediaStats(igId, token, compFromDate, compToDate),
-    ]);
-    compInsights = ci.data;
-    compTotals   = buildTotals(ci.data, cm);
+    const compDbSnapshots = await prisma.socialMetricSnapshot.findMany({
+      where: { vertical: dbVertical, platform: "INSTAGRAM", date: { gte: compFromDate, lte: compToDate } },
+      orderBy: { date: "asc" },
+    });
+
+    if (compDbSnapshots.length > 0) {
+      compDaily  = snapshotsToDailySeries(compDbSnapshots);
+      compTotals = buildTotalsFromSnapshots(compDbSnapshots);
+    } else {
+      const compSince = Math.floor(compFromDate.getTime() / 1000);
+      const compUntil = Math.floor(compToDate.getTime()   / 1000);
+      const [ci, cm]  = await Promise.all([
+        fetchInsights(igId, compSince, compUntil, token),
+        fetchMediaStats(igId, token, compFromDate, compToDate),
+      ]);
+      compDaily  = ci.data;
+      compTotals = buildTotals(ci.data, cm);
+    }
   }
 
   // ── Demographics ──────────────────────────────────────────────────────
@@ -422,6 +535,8 @@ export async function GET(req: NextRequest) {
     connected:  true,
     vertical,
     platform,
+    dataSource: hasDbData ? "database" : "meta_api",
+    dbDaysStored: dbSnapshots.length,
     accountInfo: {
       igId,
       handle:         `@${acctData.username || intg.instagramHandle || ""}`,
@@ -432,12 +547,12 @@ export async function GET(req: NextRequest) {
     current: {
       period: { from: fromDate.toISOString().split("T")[0], to: toDate.toISOString().split("T")[0] },
       totals: currentTotals,
-      daily:  currentInsights,
+      daily:  currentDaily,
     },
     comparison: compTotals ? {
       period: { from: compFromDate!.toISOString().split("T")[0], to: compToDate!.toISOString().split("T")[0] },
       totals: compTotals,
-      daily:  compInsights,
+      daily:  compDaily,
     } : null,
     demographics,
     topVideosLastWeek: lastWeekMedia.topMedia,

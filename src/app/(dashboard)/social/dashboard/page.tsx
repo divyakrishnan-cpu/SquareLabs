@@ -27,6 +27,10 @@ interface MetricsTotals {
   views:               number;
   reach:               number;
   contentInteractions: number;
+  likes:               number;
+  comments:            number;
+  saves:               number;
+  shares:              number;
   linkClicks:          number;
   profileVisits:       number;
   follows:             number;
@@ -68,6 +72,8 @@ interface MetricsData {
   } | null;
   topVideosLastWeek: VideoItem[];
   insightErrors?: string[];
+  dataSource?: "database" | "meta_api";
+  dbDaysStored?: number;
 }
 
 interface VideoItem {
@@ -408,17 +414,21 @@ interface MetricDef {
 }
 
 const METRIC_DEFS: MetricDef[] = [
-  { key: "views",               dailyKey: "views",               label: "Views (Impressions)",        icon: <Eye size={14} />,              color: "text-indigo-500" },
-  { key: "reach",               dailyKey: "reach",               label: "Reach",                      icon: <Globe size={14} />,            color: "text-blue-500" },
-  { key: "contentInteractions", dailyKey: "total_interactions",  label: "Content Interactions",       icon: <Heart size={14} />,            color: "text-rose-500" },
+  { key: "views",               dailyKey: "views",               label: "Views (Impressions)",        icon: <Eye size={14} />,               color: "text-indigo-500" },
+  { key: "reach",               dailyKey: "reach",               label: "Reach",                      icon: <Globe size={14} />,             color: "text-blue-500" },
+  { key: "contentInteractions", dailyKey: "total_interactions",  label: "Content Interactions",       icon: <Heart size={14} />,             color: "text-rose-500" },
+  { key: "likes",               dailyKey: "likes",               label: "  ↳ Likes",                  icon: <Heart size={12} />,             color: "text-rose-400" },
+  { key: "comments",            dailyKey: "comments",            label: "  ↳ Comments",               icon: <MessageCircle size={12} />,     color: "text-blue-400" },
+  { key: "saves",               dailyKey: "saves",               label: "  ↳ Saves",                  icon: <Bookmark size={12} />,          color: "text-amber-400" },
+  { key: "shares",              dailyKey: "shares",              label: "  ↳ Shares",                 icon: <Share2 size={12} />,            color: "text-green-400" },
   { key: "linkClicks",          dailyKey: "website_clicks",      label: "Link Clicks",                icon: <MousePointerClick size={14} />, color: "text-cyan-500" },
-  { key: "profileVisits",       dailyKey: "profile_views",       label: "Profile Visits",             icon: <Users size={14} />,            color: "text-violet-500" },
-  { key: "follows",             dailyKey: "follows",             label: "Follows",                    icon: <UserCheck size={14} />,        color: "text-green-500" },
-  { key: "unfollows",           dailyKey: "unfollows",           label: "Unfollows",                  icon: <UserMinus size={14} />,        color: "text-red-500" },
-  { key: "netFollowers",        dailyKey: "follows",             label: "Net Followers",              icon: <TrendingUp size={14} />,       color: "text-emerald-500" },
-  { key: "postsPublished",      dailyKey: "views",               label: "Total Content Published",    icon: <AlignJustify size={14} />,     color: "text-gray-500" },
-  { key: "videoPosts",          dailyKey: "views",               label: "Video / Reel Content",       icon: <Clapperboard size={14} />,     color: "text-pink-500" },
-  { key: "staticPosts",         dailyKey: "views",               label: "Static / Image Content",     icon: <Image size={14} />,            color: "text-amber-500" },
+  { key: "profileVisits",       dailyKey: "profile_views",       label: "Profile Visits",             icon: <Users size={14} />,             color: "text-violet-500" },
+  { key: "follows",             dailyKey: "follows",             label: "Follows",                    icon: <UserCheck size={14} />,         color: "text-green-500" },
+  { key: "unfollows",           dailyKey: "unfollows",           label: "Unfollows",                  icon: <UserMinus size={14} />,         color: "text-red-500" },
+  { key: "netFollowers",        dailyKey: "follows",             label: "Net Followers",              icon: <TrendingUp size={14} />,        color: "text-emerald-500" },
+  { key: "postsPublished",      dailyKey: "posts",               label: "Total Content Published",    icon: <AlignJustify size={14} />,      color: "text-gray-500" },
+  { key: "videoPosts",          dailyKey: "videos",              label: "Video / Reel Content",       icon: <Clapperboard size={14} />,      color: "text-pink-500" },
+  { key: "staticPosts",         dailyKey: "statics",             label: "Static / Image Content",     icon: <Image size={14} />,             color: "text-amber-500" },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -624,8 +634,10 @@ export default function SocialDashboardPage() {
   const [error,   setError]   = useState<string | null>(null);
 
   // ── Modal state ─────────────────────────────────────────────────────────────
-  const [graphMetric,  setGraphMetric]  = useState<MetricDef | null>(null);
+  const [graphMetric,   setGraphMetric]   = useState<MetricDef | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<VideoItem | null>(null);
+  const [syncing,       setSyncing]       = useState(false);
+  const [syncMsg,       setSyncMsg]       = useState<string | null>(null);
 
   // ── Build date params ────────────────────────────────────────────────────────
   const buildParams = useCallback(() => {
@@ -678,6 +690,25 @@ export default function SocialDashboardPage() {
   }, [buildParams]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const syncNow = useCallback(async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res  = await fetch("/api/meta/instagram/sync-daily", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ vertical }),
+      });
+      const json = await res.json();
+      setSyncMsg(`Synced ${json.synced ?? 0} account(s) — refreshing…`);
+      setTimeout(() => { fetchData(); setSyncMsg(null); }, 1500);
+    } catch {
+      setSyncMsg("Sync failed. Try again.");
+    } finally {
+      setSyncing(false);
+    }
+  }, [vertical, fetchData]);
 
   // ── Available platforms (Pinterest only for Interior) ────────────────────────
   const availablePlatforms = PLATFORMS.filter(p => !p.interiorOnly || vertical === "INTERIOR");
@@ -761,12 +792,23 @@ export default function SocialDashboardPage() {
             {showComp ? "✓ Comparing" : "+ Compare"}
           </button>
 
-          <button onClick={fetchData} disabled={loading}
-            className="ml-auto flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors">
-            <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-            {loading ? "Loading…" : "Refresh"}
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            {/* Sync today's data into DB */}
+            <button onClick={syncNow} disabled={syncing || loading}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 transition-colors disabled:opacity-50">
+              <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
+              {syncing ? "Syncing…" : "Sync Today"}
+            </button>
+            <button onClick={fetchData} disabled={loading}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors">
+              <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+              {loading ? "Loading…" : "Refresh"}
+            </button>
+          </div>
         </div>
+        {syncMsg && (
+          <p className="text-xs text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">{syncMsg}</p>
+        )}
 
         {/* Comparison sub-row */}
         {showComp && (
@@ -844,6 +886,15 @@ export default function SocialDashboardPage() {
               <p>{fmtDate(data.current.period.from)} – {fmtDate(data.current.period.to)}</p>
               {data.comparison && (
                 <p className="text-purple-500">vs {fmtDate(data.comparison.period.from)} – {fmtDate(data.comparison.period.to)}</p>
+              )}
+              {data.dataSource === "database" ? (
+                <span className="inline-flex items-center gap-1 mt-1 bg-green-50 text-green-700 border border-green-200 text-[10px] font-medium px-2 py-0.5 rounded-full">
+                  ● DB · {data.dbDaysStored}d stored
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 mt-1 bg-blue-50 text-blue-600 border border-blue-200 text-[10px] font-medium px-2 py-0.5 rounded-full">
+                  ● Live · tap Sync Today to store
+                </span>
               )}
             </div>
           </div>
