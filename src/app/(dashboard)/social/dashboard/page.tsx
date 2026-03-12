@@ -407,29 +407,30 @@ function QRModal({ media, onClose }: { media: VideoItem; onClose: () => void }) 
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface MetricDef {
-  key:      keyof MetricsTotals;
-  dailyKey: string;
-  label:    string;
-  icon:     React.ReactNode;
-  color:    string;
+  key:         keyof MetricsTotals;
+  dailyKey:    string;
+  label:       string;
+  icon:        React.ReactNode;
+  color:       string;
+  description: string;
 }
 
 const METRIC_DEFS: MetricDef[] = [
-  { key: "views",               dailyKey: "views",               label: "Views (Impressions)",        icon: <Eye size={14} />,               color: "text-indigo-500" },
-  { key: "reach",               dailyKey: "reach",               label: "Reach",                      icon: <Globe size={14} />,             color: "text-blue-500" },
-  { key: "contentInteractions", dailyKey: "total_interactions",  label: "Content Interactions",       icon: <Heart size={14} />,             color: "text-rose-500" },
-  { key: "likes",               dailyKey: "likes",               label: "  ↳ Likes",                  icon: <Heart size={12} />,             color: "text-rose-400" },
-  { key: "comments",            dailyKey: "comments",            label: "  ↳ Comments",               icon: <MessageCircle size={12} />,     color: "text-blue-400" },
-  { key: "saves",               dailyKey: "saves",               label: "  ↳ Saves",                  icon: <Bookmark size={12} />,          color: "text-amber-400" },
-  { key: "shares",              dailyKey: "shares",              label: "  ↳ Shares",                 icon: <Share2 size={12} />,            color: "text-green-400" },
-  { key: "linkClicks",          dailyKey: "website_clicks",      label: "Link Clicks",                icon: <MousePointerClick size={14} />, color: "text-cyan-500" },
-  { key: "profileVisits",       dailyKey: "profile_views",       label: "Profile Visits",             icon: <Users size={14} />,             color: "text-violet-500" },
-  { key: "follows",             dailyKey: "follows",             label: "Follows",                    icon: <UserCheck size={14} />,         color: "text-green-500" },
-  { key: "unfollows",           dailyKey: "unfollows",           label: "Unfollows",                  icon: <UserMinus size={14} />,         color: "text-red-500" },
-  { key: "netFollowers",        dailyKey: "follows",             label: "Net Followers",              icon: <TrendingUp size={14} />,        color: "text-emerald-500" },
-  { key: "postsPublished",      dailyKey: "posts",               label: "Total Content Published",    icon: <AlignJustify size={14} />,      color: "text-gray-500" },
-  { key: "videoPosts",          dailyKey: "videos",              label: "Video / Reel Content",       icon: <Clapperboard size={14} />,      color: "text-pink-500" },
-  { key: "staticPosts",         dailyKey: "statics",             label: "Static / Image Content",     icon: <Image size={14} />,             color: "text-amber-500" },
+  { key: "views",               dailyKey: "views",               label: "Views (Impressions)",        icon: <Eye size={14} />,               color: "text-indigo-500", description: "Total number of times your posts, Stories, and Reels were seen — a single person viewing multiple times counts each view." },
+  { key: "reach",               dailyKey: "reach",               label: "Reach",                      icon: <Globe size={14} />,             color: "text-blue-500",   description: "Number of unique accounts that saw any of your content at least once. Unlike Views, each person is counted only once regardless of how many times they saw it." },
+  { key: "contentInteractions", dailyKey: "total_interactions",  label: "Content Interactions",       icon: <Heart size={14} />,             color: "text-rose-500",   description: "Total interactions on your content in this period — the sum of Likes + Comments + Saves + Shares (as reported by Meta's Insights API). This is the official Meta aggregate." },
+  { key: "likes",               dailyKey: "likes",               label: "  ↳ Likes",                  icon: <Heart size={12} />,             color: "text-rose-400",   description: "Number of times people liked your posts within the selected date range, sourced from Meta Insights API." },
+  { key: "comments",            dailyKey: "comments",            label: "  ↳ Comments",               icon: <MessageCircle size={12} />,     color: "text-blue-400",   description: "Number of comments left on your posts within the selected date range, sourced from Meta Insights API." },
+  { key: "saves",               dailyKey: "saves",               label: "  ↳ Saves",                  icon: <Bookmark size={12} />,          color: "text-amber-400",  description: "Number of times people saved your posts to their collections within the selected date range, sourced from Meta Insights API." },
+  { key: "shares",              dailyKey: "shares",              label: "  ↳ Shares",                 icon: <Share2 size={12} />,            color: "text-green-400",  description: "Number of times your posts were shared (e.g. sent to someone's DMs or shared to Stories) within the selected date range, sourced from Meta Insights API." },
+  { key: "linkClicks",          dailyKey: "website_clicks",      label: "Link Clicks",                icon: <MousePointerClick size={14} />, color: "text-cyan-500",   description: "Number of taps on the website link in your bio or on swipe-up links in Stories." },
+  { key: "profileVisits",       dailyKey: "profile_views",       label: "Profile Visits",             icon: <Users size={14} />,             color: "text-violet-500", description: "Number of times your Instagram profile page was visited within the selected period." },
+  { key: "follows",             dailyKey: "follows",             label: "Follows",                    icon: <UserCheck size={14} />,         color: "text-green-500",  description: "Number of new accounts that followed you during the selected period." },
+  { key: "unfollows",           dailyKey: "unfollows",           label: "Unfollows",                  icon: <UserMinus size={14} />,         color: "text-red-500",    description: "Number of accounts that unfollowed you during the selected period." },
+  { key: "netFollowers",        dailyKey: "follows",             label: "Net Followers",              icon: <TrendingUp size={14} />,        color: "text-emerald-500", description: "Net change in followers = Follows minus Unfollows. A positive number means you gained more followers than you lost." },
+  { key: "postsPublished",      dailyKey: "posts",               label: "Total Content Published",    icon: <AlignJustify size={14} />,      color: "text-gray-500",   description: "Total number of posts (images, videos, Reels, carousels) published in the selected period." },
+  { key: "videoPosts",          dailyKey: "videos",              label: "Video / Reel Content",       icon: <Clapperboard size={14} />,      color: "text-pink-500",   description: "Number of video and Reel posts published in the selected period." },
+  { key: "staticPosts",         dailyKey: "statics",             label: "Static / Image Content",     icon: <Image size={14} />,             color: "text-amber-500",  description: "Number of static image posts published in the selected period." },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -975,7 +976,22 @@ export default function SocialDashboardPage() {
                     className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors text-left group"
                   >
                     <span className={cn("shrink-0", m.color)}>{m.icon}</span>
-                    <span className="flex-1 text-sm text-gray-700">{m.label}</span>
+                    <span className="flex-1 flex items-center gap-1.5 text-sm text-gray-700">
+                      {m.label}
+                      {/* (i) tooltip */}
+                      <span
+                        className="relative shrink-0"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <span className="peer inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-gray-200 text-gray-500 text-[9px] font-bold cursor-default select-none hover:bg-indigo-100 hover:text-indigo-600 transition-colors">
+                          i
+                        </span>
+                        <span className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 z-50 hidden peer-hover:block w-64 rounded-lg bg-gray-900 text-white text-[11px] leading-snug px-3 py-2 shadow-xl">
+                          {m.description}
+                          <span className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-gray-900" />
+                        </span>
+                      </span>
+                    </span>
                     <span className="text-sm font-bold text-gray-900 w-20 text-right">
                       {fmtNum(curr)}
                     </span>

@@ -534,14 +534,10 @@ export async function GET(req: NextRequest) {
     insightErrors = insightResult.errors;
     currentMedia  = media;
     interactionErrors = interactionBreakdown.errors;
-    // Fallback: if Insights API didn't return likes/comments, use sums from media endpoint
-    const mergedInteractions = {
-      likes:    interactionBreakdown.likes    > 0 ? interactionBreakdown.likes    : media.likes,
-      comments: interactionBreakdown.comments > 0 ? interactionBreakdown.comments : media.comments,
-      saves:    interactionBreakdown.saves,
-      shares:   interactionBreakdown.shares,
-    };
-    currentTotals = { ...buildTotals(insightResult.data, media), ...mergedInteractions };
+    // Only use Insights API values — media.like_count is a cumulative lifetime count,
+    // NOT scoped to the selected date range, so it must NOT be used as a fallback here.
+    const { errors: _e, ...interactionValues } = interactionBreakdown;
+    currentTotals = { ...buildTotals(insightResult.data, media), ...interactionValues };
   } else {
     // Fetch media + interaction breakdown in parallel (not stored per-day in DB)
     const [media, interactionBreakdown] = await Promise.all([
@@ -550,16 +546,10 @@ export async function GET(req: NextRequest) {
     ]);
     currentMedia      = media;
     interactionErrors = interactionBreakdown.errors;
-    // Fallback: if Insights API didn't return likes/comments, use sums from media endpoint
-    const mergedInteractions = {
-      likes:    interactionBreakdown.likes    > 0 ? interactionBreakdown.likes    : media.likes,
-      comments: interactionBreakdown.comments > 0 ? interactionBreakdown.comments : media.comments,
-      saves:    interactionBreakdown.saves,
-      shares:   interactionBreakdown.shares,
-    };
+    const { errors: _e2, ...interactionValues } = interactionBreakdown;
     currentTotals = {
       ...currentTotals!,
-      ...mergedInteractions,
+      ...interactionValues,
       ...(currentTotals!.postsPublished === 0 && media.total > 0
         ? { postsPublished: media.total, videoPosts: media.video, staticPosts: media.image }
         : {}),
