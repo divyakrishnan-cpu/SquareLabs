@@ -11,7 +11,7 @@ import {
   Star, TrendingUp, MapPin, Minus, Globe, X, Pencil, Plus,
   ExternalLink, RefreshCw, ChevronUp, ChevronDown,
   Building2, Search, AlertTriangle, CheckCircle2,
-  Database, Copy, Check,
+  Database, Copy, Check, Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -598,8 +598,17 @@ export default function GmbDashboardPage() {
   const [expanded,   setExpanded]   = useState<string | null>(null);
 
   // ── Modals ──
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [editLoc,      setEditLoc]      = useState<GmbLocation | null>(null);
+  const [showAddModal,   setShowAddModal]   = useState(false);
+  const [editLoc,        setEditLoc]        = useState<GmbLocation | null>(null);
+
+  // ── Scrape state ──
+  const [scraping,     setScraping]     = useState(false);
+  const [scrapeResult, setScrapeResult] = useState<{
+    message: string;
+    found: number;
+    total: number;
+    results: { id: string; name: string; city: string; business: string; rating: number | null; source: string }[];
+  } | null>(null);
 
   // ── Filters (global — affect both summary cards and table) ──
   const [bizFilter,     setBizFilter]     = useState("All");
@@ -631,6 +640,18 @@ export default function GmbDashboardPage() {
       await load();
     } catch (e) { alert("Seed failed: " + String(e)); }
     finally { setSeeding(false); }
+  }
+
+  async function runScrape() {
+    setScraping(true); setScrapeResult(null);
+    try {
+      const res  = await fetch("/api/orm/gmb/scrape-ratings", { method: "POST" });
+      const json = await res.json();
+      if (json.error) { alert(json.error); return; }
+      setScrapeResult(json);
+      await load();   // reload to show newly populated ratings
+    } catch (e) { alert("Scrape failed: " + String(e)); }
+    finally { setScraping(false); }
   }
 
   function copyReport() {
@@ -746,6 +767,12 @@ export default function GmbDashboardPage() {
             <Database size={12} className={seeding ? "animate-pulse" : ""}/>
             {seeding ? "Syncing…" : "Re-sync Data"}
           </button>
+          <button onClick={runScrape} disabled={scraping}
+            className="flex items-center gap-1.5 text-xs border border-amber-200 bg-amber-50 text-amber-700 px-3 py-1.5 rounded-lg hover:bg-amber-100 disabled:opacity-50"
+            title="Fetch missing ratings from Google Maps">
+            <Zap size={12} className={scraping ? "animate-pulse" : ""}/>
+            {scraping ? "Scraping Google…" : "Scrape Ratings"}
+          </button>
           <button onClick={() => setShowAddModal(true)}
             className="flex items-center gap-1.5 text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 font-medium">
             <Plus size={12}/> Add GMB
@@ -786,20 +813,11 @@ export default function GmbDashboardPage() {
 
         {data && <>
           {/* ── Summary cards (reflect global filter + period) ── */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-5">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-5">
             <Card className="p-4">
               <p className="text-[10px] text-gray-500 uppercase tracking-wide font-semibold mb-1">Total Locations</p>
               <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
               <p className="text-[10px] text-gray-400 mt-0.5">{stats.tracked} with rating data</p>
-            </Card>
-            <Card className="p-4">
-              <p className="text-[10px] text-gray-500 uppercase tracking-wide font-semibold mb-1">Portfolio Avg Rating</p>
-              <p className={cn("text-2xl font-bold", stats.avg && stats.avg >= 4.0 ? "text-green-600" : "text-amber-500")}>
-                {stats.avg !== null
-                  ? <span className="flex items-center gap-1"><Star size={16} fill="currentColor"/>{stats.avg}</span>
-                  : "—"}
-              </p>
-              <p className="text-[10px] text-gray-400 mt-0.5">{PERIODS.find(p => p.value === period)?.label}</p>
             </Card>
             <Card className="p-4">
               <p className="text-[10px] text-gray-500 uppercase tracking-wide font-semibold mb-1">Top Grower</p>
@@ -1090,6 +1108,72 @@ export default function GmbDashboardPage() {
           onClose={() => setEditLoc(null)}
           onSaved={() => { setEditLoc(null); load(); }}
         />
+      )}
+
+      {/* ── Scrape results modal ── */}
+      {scrapeResult && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setScrapeResult(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-800">Scrape Results</h2>
+                <p className="text-[11px] text-gray-500 mt-0.5">{scrapeResult.message}</p>
+              </div>
+              <button onClick={() => setScrapeResult(null)} className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100">
+                <X size={15}/>
+              </button>
+            </div>
+
+            {/* Summary bar */}
+            <div className="px-6 py-3 bg-gray-50 border-b border-gray-100 flex items-center gap-6 text-xs">
+              <span className="text-green-700 font-semibold">✅ Found: {scrapeResult.found}</span>
+              <span className="text-red-600 font-semibold">❌ Not found: {scrapeResult.total - scrapeResult.found}</span>
+              <span className="text-gray-500">Total scanned: {scrapeResult.total}</span>
+            </div>
+
+            {/* Results table */}
+            <div className="max-h-[50vh] overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th className="text-left px-5 py-2.5 text-gray-500 font-semibold">Location</th>
+                    <th className="text-left px-5 py-2.5 text-gray-500 font-semibold">Business</th>
+                    <th className="text-center px-5 py-2.5 text-gray-500 font-semibold">Rating Found</th>
+                    <th className="text-center px-5 py-2.5 text-gray-500 font-semibold">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scrapeResult.results.map(r => (
+                    <tr key={r.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
+                      <td className="px-5 py-2.5 font-medium text-gray-700">{r.name}</td>
+                      <td className="px-5 py-2.5 text-gray-500">{r.business}</td>
+                      <td className="px-5 py-2.5 text-center">
+                        {r.rating !== null ? (
+                          <span className="inline-flex items-center gap-1 text-green-700 font-bold">
+                            <Star size={11} fill="currentColor"/> {r.rating.toFixed(1)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-2.5 text-center">
+                        {r.rating !== null ? (
+                          <span className="bg-green-100 text-green-700 text-[10px] font-medium px-1.5 py-0.5 rounded">Saved ✓</span>
+                        ) : (
+                          <span className="bg-gray-100 text-gray-500 text-[10px] font-medium px-1.5 py-0.5 rounded">Manual entry needed</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-100 text-[11px] text-gray-400">
+              Locations not found by the scraper can be updated manually via the ✏️ Edit button in the table.
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
