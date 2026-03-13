@@ -381,6 +381,84 @@ model MetaIntegration {
   @@map("meta_integrations")
 }
 
+// ── ORM-01: GMB Location Registry ─────────────────────────────────────────
+
+model GmbLocation {
+  id          String   @id @default(cuid())
+  business    String   // Square Yards, Interior Company, Urban Money, etc.
+  city        String
+  country     String
+  name        String   // Full display name of the GMB listing
+  address     String   @db.Text
+  gmbUrl      String   // business.google.com management URL
+  handledBy   String?  // Internal, Agency, or null
+  status      String   @default("active") // active | permanently_closed
+  placeId     String?  // Google Maps Place ID (for Places API lookups)
+  notes       String?
+
+  snapshots   GmbRatingSnapshot[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("gmb_locations")
+}
+
+// ── ORM-02: GMB Weekly Rating Snapshots ───────────────────────────────────
+
+model GmbRatingSnapshot {
+  id           String      @id @default(cuid())
+  locationId   String
+  location     GmbLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  weekStart    DateTime    // ISO Monday of the snapshot week (YYYY-MM-DD 00:00 UTC)
+  rating       Float?      // Star rating (e.g. 4.2)
+  reviewCount  Int?        // Total reviews at time of snapshot
+  newReviews   Int?        // New reviews since previous snapshot
+  ratingDelta  Float?      // Rating change since previous snapshot (+0.1, -0.2, etc.)
+  source       String      @default("manual") // manual | google_places | scrape
+
+  createdAt    DateTime    @default(now())
+
+  @@unique([locationId, weekStart])
+  @@map("gmb_rating_snapshots")
+}
+
+// ── ORM-03: Employee Review Platforms ─────────────────────────────────────
+
+model EmployeeReviewPlatform {
+  id        String   @id @default(cuid())
+  platform  String   // GLASSDOOR | AMBITION_BOX | INDEED | LINKEDIN
+  business  String   // Square Yards, Interior Company, etc.
+  url       String
+  isActive  Boolean  @default(true)
+
+  snapshots EmployeeReviewSnapshot[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("employee_review_platforms")
+}
+
+model EmployeeReviewSnapshot {
+  id          String                 @id @default(cuid())
+  platformId  String
+  platform    EmployeeReviewPlatform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+
+  weekStart    DateTime
+  rating       Float?
+  reviewCount  Int?
+  newReviews   Int?
+  ratingDelta  Float?
+  source       String   @default("manual")
+
+  createdAt   DateTime @default(now())
+
+  @@unique([platformId, weekStart])
+  @@map("employee_review_snapshots")
+}
+
 // ── SM-05: Publish Notifications ──────────────────────────────────────────
 
 model PublishNotification {
