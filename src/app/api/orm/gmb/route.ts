@@ -32,17 +32,19 @@ export async function GET() {
     const prev   = snaps.length > 1 ? snaps[snaps.length - 2] : null;
 
     return {
-      id:         loc.id,
-      business:   loc.business,
-      city:       loc.city,
-      country:    loc.country,
-      name:       loc.name,
-      address:    loc.address,
-      gmbUrl:     loc.gmbUrl,
-      handledBy:  loc.handledBy,
-      status:     loc.status,
-      placeId:    loc.placeId,
-      notes:      loc.notes,
+      id:           loc.id,
+      business:     loc.business,
+      city:         loc.city,
+      country:      loc.country,
+      name:         loc.name,
+      address:      loc.address,
+      gmbUrl:       loc.gmbUrl,
+      mapsUrl:      loc.mapsUrl   ?? null,
+      displayLabel: loc.displayLabel ?? null,
+      handledBy:    loc.handledBy,
+      status:       loc.status,
+      placeId:      loc.placeId,
+      notes:        loc.notes,
 
       // Latest snapshot summary
       currentRating:  latest?.rating    ?? null,

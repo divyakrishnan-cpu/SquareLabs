@@ -11,7 +11,7 @@ import {
   Star, TrendingUp, MapPin, Minus,
   ExternalLink, RefreshCw, ChevronUp, ChevronDown,
   Building2, Search, AlertTriangle, CheckCircle2,
-  Database, MessageCircle, X,
+  Database, Copy, Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +33,8 @@ interface GmbLocation {
   name:           string;
   address:        string;
   gmbUrl:         string;
+  mapsUrl:        string | null;
+  displayLabel:   string | null;
   handledBy:      string | null;
   status:         "active" | "permanently_closed";
   currentRating:  number | null;
@@ -107,6 +109,62 @@ function BusinessTag({ biz }: { biz: string }) {
   return <span className={cn("text-[10px] font-semibold px-1.5 py-0.5 rounded", cls)}>{biz}</span>;
 }
 
+// ── WhatsApp report generator ──────────────────────────────────────────────
+
+function getReportGroup(loc: GmbLocation): string {
+  if (loc.business === "Square Yards" && loc.country === "India") return "Square Yards India";
+  if (loc.business === "Square Yards") return "International";
+  if (loc.business === "Interior Company") return "INCO";
+  return loc.business; // Azuro, Urban Money, etc.
+}
+
+const GROUP_ORDER = ["Square Yards India", "International", "AZURO", "Urban Money", "INCO", "PropVR", "Square Connect"];
+
+function buildWhatsAppReport(locations: GmbLocation[]): string {
+  const today    = new Date();
+  const dateStr  = today.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+
+  const lines: string[] = [];
+  lines.push(`Reviews And Ratings Report - ${dateStr}`);
+  lines.push("");
+
+  // Group active locations that have a rating and a mapsUrl
+  const byGroup: Record<string, GmbLocation[]> = {};
+  for (const loc of locations) {
+    if (loc.status !== "active")    continue;
+    if (loc.currentRating === null) continue;
+    if (!loc.mapsUrl)               continue;
+    const grp = getReportGroup(loc);
+    if (!byGroup[grp]) byGroup[grp] = [];
+    byGroup[grp].push(loc);
+  }
+
+  // Sort within each group by rating desc
+  for (const grp of Object.keys(byGroup)) {
+    byGroup[grp].sort((a, b) => (b.currentRating ?? 0) - (a.currentRating ?? 0));
+  }
+
+  // Emit groups in defined order, then any extras
+  const allGroups = [...GROUP_ORDER, ...Object.keys(byGroup).filter(g => !GROUP_ORDER.includes(g))];
+
+  for (const grp of allGroups) {
+    const locs = byGroup[grp];
+    if (!locs || locs.length === 0) continue;
+
+    lines.push(grp);
+    for (const loc of locs) {
+      const label   = loc.displayLabel ?? loc.city;
+      const curr    = loc.currentRating!.toFixed(1);
+      const prev    = loc.prevRating !== null ? loc.prevRating.toFixed(1) : curr;
+      lines.push(`${label}- ${curr}⭐️(${prev})`);
+      lines.push(loc.mapsUrl!);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n").trimEnd();
+}
+
 // Mini sparkline for a location
 function Sparkline({ data }: { data: HistoryPoint[] }) {
   const pts = data.filter(d => d.rating !== null).map(d => ({
@@ -133,9 +191,8 @@ export default function GmbDashboardPage() {
   const [data,       setData]       = useState<GmbData | null>(null);
   const [loading,    setLoading]    = useState(true);
   const [seeding,    setSeeding]    = useState(false);
-  const [sending,    setSending]    = useState(false);
-  const [waPreview,  setWaPreview]  = useState<string | null>(null);
-  const [waStatus,   setWaStatus]   = useState<{ ok: boolean; error?: string } | null>(null);
+  const [copied,     setCopied]     = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const [search,     setSearch]     = useState("");
   const [bizFilter,  setBizFilter]  = useState(ALL_BUSINESSES);
   const [expanded,   setExpanded]   = useState<string | null>(null);
@@ -172,19 +229,13 @@ export default function GmbDashboardPage() {
     }
   }
 
-  async function sendWhatsAppReport() {
-    setSending(true); setWaPreview(null); setWaStatus(null);
-    try {
-      const res  = await fetch("/api/orm/gmb/weekly-report", { method: "POST" });
-      const json = await res.json();
-      if (json.error) { setWaStatus({ ok: false, error: json.error }); return; }
-      setWaPreview(json.report);
-      setWaStatus(json.whatsapp);
-    } catch (e) {
-      setWaStatus({ ok: false, error: String(e) });
-    } finally {
-      setSending(false);
-    }
+  function copyReport() {
+    if (!data) return;
+    const text = buildWhatsAppReport(data.locations);
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    });
   }
 
   // ── Filter ─────────────────────────────────────────────────────────────
@@ -251,12 +302,15 @@ export default function GmbDashboardPage() {
           {seeding ? "Seeding…" : "Seed / Re-sync Data"}
         </button>
         <button
-          onClick={sendWhatsAppReport}
-          disabled={sending}
-          className="flex items-center gap-1.5 text-xs border border-green-200 bg-green-50 text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-100 disabled:opacity-50"
+          onClick={() => setShowReport(r => !r)}
+          className={cn(
+            "flex items-center gap-1.5 text-xs border px-3 py-1.5 rounded-lg",
+            showReport
+              ? "border-green-300 bg-green-100 text-green-800"
+              : "border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
+          )}
         >
-          <MessageCircle size={12} className={sending ? "animate-pulse" : ""}/>
-          {sending ? "Sending…" : "Send WhatsApp Report"}
+          💬 {showReport ? "Hide Report" : "WhatsApp Report"}
         </button>
 
         {/* Business filter */}
@@ -554,54 +608,30 @@ export default function GmbDashboardPage() {
         </>
       )}
 
-      {/* ── WhatsApp Report Preview Modal ── */}
-      {(waPreview || waStatus) && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <div className="flex items-center gap-2">
-                <MessageCircle size={16} className="text-green-600"/>
-                <span className="font-semibold text-sm text-gray-800">WhatsApp Report Preview</span>
-              </div>
+      {/* ── WhatsApp Report Panel (inline) ── */}
+      {showReport && data && (
+        <div className="mt-4">
+          <Card className="overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-green-50/50">
+              <span className="text-sm font-semibold text-gray-700">💬 WhatsApp Report Preview</span>
               <button
-                onClick={() => { setWaPreview(null); setWaStatus(null); }}
-                className="text-gray-400 hover:text-gray-600"
+                onClick={copyReport}
+                className={cn(
+                  "flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors",
+                  copied
+                    ? "bg-green-500 text-white"
+                    : "bg-white border border-green-200 text-green-700 hover:bg-green-50"
+                )}
               >
-                <X size={16}/>
+                {copied ? <><Check size={12}/> Copied!</> : <><Copy size={12}/> Click to copy</>}
               </button>
             </div>
-
-            {/* Status */}
-            {waStatus && (
-              <div className={cn(
-                "mx-5 mt-3 px-3 py-2 rounded-lg text-xs font-medium",
-                waStatus.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
-              )}>
-                {waStatus.ok
-                  ? "✅ Sent successfully via WhatsApp"
-                  : `⚠️ ${waStatus.error ?? "Send failed"}`}
+            <div className="p-4 max-h-[420px] overflow-y-auto">
+              <div className="bg-[#DCF8C6] rounded-xl p-4 text-[12.5px] whitespace-pre-wrap font-mono leading-relaxed text-gray-800 shadow-sm">
+                {buildWhatsAppReport(data.locations)}
               </div>
-            )}
-
-            {/* Report preview */}
-            {waPreview && (
-              <div className="flex-1 overflow-y-auto px-5 py-4">
-                <div className="bg-[#DCF8C6] rounded-xl p-4 text-sm whitespace-pre-wrap font-mono leading-relaxed text-gray-800 shadow-sm">
-                  {waPreview}
-                </div>
-              </div>
-            )}
-
-            <div className="px-5 pb-4 pt-2 flex justify-end">
-              <button
-                onClick={() => { setWaPreview(null); setWaStatus(null); }}
-                className="text-xs border border-gray-200 px-4 py-1.5 rounded-lg text-gray-600 hover:bg-gray-50"
-              >
-                Close
-              </button>
             </div>
-          </div>
+          </Card>
         </div>
       )}
     </>

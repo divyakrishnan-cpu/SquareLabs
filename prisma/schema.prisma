@@ -384,22 +384,24 @@ model MetaIntegration {
 // ── ORM-01: GMB Location Registry ─────────────────────────────────────────
 
 model GmbLocation {
-  id          String   @id @default(cuid())
-  business    String   // Square Yards, Interior Company, Urban Money, etc.
-  city        String
-  country     String
-  name        String   // Full display name of the GMB listing
-  address     String   @db.Text
-  gmbUrl      String   // business.google.com management URL
-  handledBy   String?  // Internal, Agency, or null
-  status      String   @default("active") // active | permanently_closed
-  placeId     String?  // Google Maps Place ID (for Places API lookups)
-  notes       String?
+  id           String   @id @default(cuid())
+  business     String   // Square Yards, Interior Company, Urban Money, etc.
+  city         String
+  country      String
+  name         String   // Full display name of the GMB listing
+  address      String   @db.Text
+  gmbUrl       String   // business.google.com management URL
+  mapsUrl      String?  // Short Google Maps URL (maps.app.goo.gl/...) for reports
+  displayLabel String?  // Custom label shown in reports, e.g. "Mumbai (Andheri East)"
+  handledBy    String?  // Internal, Agency, or null
+  status       String   @default("active") // active | permanently_closed
+  placeId      String?  // Google Maps Place ID (for Places API lookups)
+  notes        String?
 
-  snapshots   GmbRatingSnapshot[]
+  snapshots    GmbRatingSnapshot[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@map("gmb_locations")
 }
