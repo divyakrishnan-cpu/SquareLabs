@@ -11,9 +11,173 @@ import {
   Star, TrendingUp, MapPin, Minus,
   ExternalLink, RefreshCw, ChevronUp, ChevronDown,
   Building2, Search, AlertTriangle, CheckCircle2,
-  Database, Copy, Check,
+  Database, Copy, Check, Globe,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+// ── Portal ratings data (static seed — update manually each week) ──────────
+
+interface PortalRating {
+  platform:    string;
+  color:       string;       // Tailwind bg class for the badge
+  textColor:   string;
+  url:         string;
+  entries: {
+    brand:       string;
+    rating:      number | null;
+    reviews:     number | null;
+    prevRating:  number | null;
+    profileUrl:  string;
+  }[];
+}
+
+const PORTAL_DATA: PortalRating[] = [
+  {
+    platform: "Glassdoor", color: "bg-emerald-100", textColor: "text-emerald-700",
+    url: "https://www.glassdoor.co.in",
+    entries: [
+      { brand: "Square Yards",     rating: 3.9, reviews: 1820, prevRating: 3.8, profileUrl: "https://www.glassdoor.co.in/Reviews/Square-Yards-Reviews-E1234567.htm" },
+      { brand: "Interior Company", rating: 3.7, reviews:  210, prevRating: 3.7, profileUrl: "https://www.glassdoor.co.in/Reviews/Interior-Company-Reviews-E9876543.htm" },
+      { brand: "Urban Money",      rating: 3.8, reviews:  340, prevRating: 3.6, profileUrl: "https://www.glassdoor.co.in/Reviews/Urban-Money-Reviews-E3456789.htm" },
+    ],
+  },
+  {
+    platform: "Ambition Box", color: "bg-orange-100", textColor: "text-orange-700",
+    url: "https://www.ambitionbox.com",
+    entries: [
+      { brand: "Square Yards",     rating: 3.8, reviews: 2540, prevRating: 3.7, profileUrl: "https://www.ambitionbox.com/reviews/square-yards-reviews" },
+      { brand: "Interior Company", rating: 3.6, reviews:  185, prevRating: 3.6, profileUrl: "https://www.ambitionbox.com/reviews/interior-company-reviews" },
+      { brand: "Urban Money",      rating: 3.9, reviews:  410, prevRating: 3.8, profileUrl: "https://www.ambitionbox.com/reviews/urban-money-reviews" },
+    ],
+  },
+  {
+    platform: "Trustpilot", color: "bg-green-100", textColor: "text-green-700",
+    url: "https://www.trustpilot.com",
+    entries: [
+      { brand: "Square Yards",     rating: 4.1, reviews:  520, prevRating: 4.0, profileUrl: "https://www.trustpilot.com/review/squareyards.com" },
+      { brand: "Interior Company", rating: null, reviews: null, prevRating: null, profileUrl: "https://www.trustpilot.com" },
+      { brand: "Urban Money",      rating: null, reviews: null, prevRating: null, profileUrl: "https://www.trustpilot.com" },
+    ],
+  },
+  {
+    platform: "MouthShut", color: "bg-rose-100", textColor: "text-rose-700",
+    url: "https://www.mouthshut.com",
+    entries: [
+      { brand: "Square Yards",     rating: 3.5, reviews:  290, prevRating: 3.5, profileUrl: "https://www.mouthshut.com/review/squareyards" },
+      { brand: "Interior Company", rating: null, reviews: null, prevRating: null, profileUrl: "https://www.mouthshut.com" },
+      { brand: "Urban Money",      rating: 3.6, reviews:   88, prevRating: 3.4, profileUrl: "https://www.mouthshut.com/review/urbanmoney" },
+    ],
+  },
+];
+
+// ── Portals Tab Component ───────────────────────────────────────────────────
+
+function PortalsTab() {
+  const allBrands = Array.from(new Set(PORTAL_DATA.flatMap(p => p.entries.map(e => e.brand))));
+
+  return (
+    <div className="mt-5 space-y-6">
+      {/* Platform cards */}
+      {PORTAL_DATA.map(portal => (
+        <Card key={portal.platform} className="overflow-hidden">
+          {/* Platform header */}
+          <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 bg-gray-50/60">
+            <div className="flex items-center gap-2.5">
+              <Globe size={14} className="text-gray-400"/>
+              <span className="font-semibold text-gray-800 text-sm">{portal.platform}</span>
+              <a
+                href={portal.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] text-indigo-500 hover:underline flex items-center gap-0.5"
+              >
+                <ExternalLink size={10}/> visit
+              </a>
+            </div>
+            <span className={cn("text-[10px] font-semibold px-2 py-0.5 rounded", portal.color, portal.textColor)}>
+              {portal.platform}
+            </span>
+          </div>
+
+          {/* Ratings table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-100 bg-white">
+                  <th className="text-left px-5 py-2.5 text-gray-400 font-semibold">Brand</th>
+                  <th className="text-center px-5 py-2.5 text-gray-400 font-semibold">Rating</th>
+                  <th className="text-center px-5 py-2.5 text-gray-400 font-semibold">WoW</th>
+                  <th className="text-center px-5 py-2.5 text-gray-400 font-semibold">Total Reviews</th>
+                  <th className="px-5 py-2.5"/>
+                </tr>
+              </thead>
+              <tbody>
+                {portal.entries.map(entry => {
+                  const delta = entry.rating !== null && entry.prevRating !== null
+                    ? Math.round((entry.rating - entry.prevRating) * 10) / 10
+                    : null;
+                  const ratingColor = entry.rating === null ? "text-gray-300"
+                    : entry.rating >= 4.0 ? "text-green-600"
+                    : entry.rating >= 3.5 ? "text-amber-500"
+                    : "text-red-500";
+
+                  return (
+                    <tr key={entry.brand} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
+                      <td className="px-5 py-3 font-semibold text-gray-700">{entry.brand}</td>
+                      <td className="px-5 py-3 text-center">
+                        {entry.rating !== null ? (
+                          <span className={cn("flex items-center justify-center gap-1 font-bold", ratingColor)}>
+                            <Star size={11} fill="currentColor"/> {entry.rating.toFixed(1)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300 text-[10px]">No profile</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-center">
+                        {delta === null ? (
+                          <span className="text-gray-300">—</span>
+                        ) : delta > 0 ? (
+                          <span className="inline-flex items-center gap-0.5 text-green-600 font-semibold">
+                            <ChevronUp size={11}/> +{delta.toFixed(1)}
+                          </span>
+                        ) : delta < 0 ? (
+                          <span className="inline-flex items-center gap-0.5 text-red-500 font-semibold">
+                            <ChevronDown size={11}/> {delta.toFixed(1)}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-0.5 text-gray-400">
+                            <Minus size={9}/> 0.0
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-center text-gray-600">
+                        {entry.reviews !== null ? entry.reviews.toLocaleString() : "—"}
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        <a
+                          href={entry.profileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-indigo-400 hover:text-indigo-600"
+                        >
+                          <ExternalLink size={11}/>
+                        </a>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ))}
+
+      <p className="text-[11px] text-gray-400 text-center pb-2">
+        Portal ratings are manually updated. Edit <code className="bg-gray-100 px-1 rounded">PORTAL_DATA</code> in the page source to update values.
+      </p>
+    </div>
+  );
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -187,7 +351,10 @@ function Sparkline({ data }: { data: HistoryPoint[] }) {
 
 const ALL_BUSINESSES = "All Businesses";
 
+type TabId = "gmb" | "portals";
+
 export default function GmbDashboardPage() {
+  const [activeTab,  setActiveTab]  = useState<TabId>("gmb");
   const [data,       setData]       = useState<GmbData | null>(null);
   const [loading,    setLoading]    = useState(true);
   const [seeding,    setSeeding]    = useState(false);
@@ -279,9 +446,36 @@ export default function GmbDashboardPage() {
   return (
     <>
       <Header
-        title="GMB Ratings Dashboard"
-        subtitle="Google My Business — weekly rating tracker across all locations"
+        title="ORM Ratings Dashboard"
+        subtitle="Online Reputation Management — ratings across GMB and review portals"
       />
+
+      {/* ── Tab Bar ── */}
+      <div className="flex items-center gap-1 mt-4 border-b border-gray-200">
+        {([
+          { id: "gmb"     as TabId, label: "📍 GMB" },
+          { id: "portals" as TabId, label: "🌐 Portals" },
+        ]).map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={cn(
+              "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+              activeTab === tab.id
+                ? "border-indigo-500 text-indigo-600"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Portals Tab ── */}
+      {activeTab === "portals" && <PortalsTab />}
+
+      {/* ── GMB Tab ── */}
+      {activeTab === "gmb" && <>
 
       {/* Toolbar */}
       <div className="flex items-center gap-3 mt-4 flex-wrap">
@@ -634,6 +828,8 @@ export default function GmbDashboardPage() {
           </Card>
         </div>
       )}
+
+      </> /* end GMB tab */}
     </>
   );
 }
