@@ -201,7 +201,7 @@ export default function GmbDashboardPage() {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const res  = await fetch("/api/orm/gmb");
+      const res  = await fetch(`/api/orm/gmb?t=${Date.now()}`);
       const json = await res.json();
       if (json.error) throw new Error(json.error);
       setData(json);
