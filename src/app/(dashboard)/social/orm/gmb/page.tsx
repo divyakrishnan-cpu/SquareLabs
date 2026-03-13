@@ -8,10 +8,10 @@ import {
   ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import {
-  Star, TrendingUp, TrendingDown, MapPin, Minus,
+  Star, TrendingUp, MapPin, Minus,
   ExternalLink, RefreshCw, ChevronUp, ChevronDown,
   Building2, Search, AlertTriangle, CheckCircle2,
-  Database, Filter,
+  Database, MessageCircle, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -130,13 +130,16 @@ function Sparkline({ data }: { data: HistoryPoint[] }) {
 const ALL_BUSINESSES = "All Businesses";
 
 export default function GmbDashboardPage() {
-  const [data,     setData]     = useState<GmbData | null>(null);
-  const [loading,  setLoading]  = useState(true);
-  const [seeding,  setSeeding]  = useState(false);
-  const [search,   setSearch]   = useState("");
-  const [bizFilter,setBizFilter]= useState(ALL_BUSINESSES);
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [error,    setError]    = useState<string | null>(null);
+  const [data,       setData]       = useState<GmbData | null>(null);
+  const [loading,    setLoading]    = useState(true);
+  const [seeding,    setSeeding]    = useState(false);
+  const [sending,    setSending]    = useState(false);
+  const [waPreview,  setWaPreview]  = useState<string | null>(null);
+  const [waStatus,   setWaStatus]   = useState<{ ok: boolean; error?: string } | null>(null);
+  const [search,     setSearch]     = useState("");
+  const [bizFilter,  setBizFilter]  = useState(ALL_BUSINESSES);
+  const [expanded,   setExpanded]   = useState<string | null>(null);
+  const [error,      setError]      = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -166,6 +169,21 @@ export default function GmbDashboardPage() {
       alert("Seed failed: " + String(e));
     } finally {
       setSeeding(false);
+    }
+  }
+
+  async function sendWhatsAppReport() {
+    setSending(true); setWaPreview(null); setWaStatus(null);
+    try {
+      const res  = await fetch("/api/orm/gmb/weekly-report", { method: "POST" });
+      const json = await res.json();
+      if (json.error) { setWaStatus({ ok: false, error: json.error }); return; }
+      setWaPreview(json.report);
+      setWaStatus(json.whatsapp);
+    } catch (e) {
+      setWaStatus({ ok: false, error: String(e) });
+    } finally {
+      setSending(false);
     }
   }
 
@@ -231,6 +249,14 @@ export default function GmbDashboardPage() {
         >
           <Database size={12} className={seeding ? "animate-pulse" : ""}/>
           {seeding ? "Seeding…" : "Seed / Re-sync Data"}
+        </button>
+        <button
+          onClick={sendWhatsAppReport}
+          disabled={sending}
+          className="flex items-center gap-1.5 text-xs border border-green-200 bg-green-50 text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-100 disabled:opacity-50"
+        >
+          <MessageCircle size={12} className={sending ? "animate-pulse" : ""}/>
+          {sending ? "Sending…" : "Send WhatsApp Report"}
         </button>
 
         {/* Business filter */}
@@ -526,6 +552,57 @@ export default function GmbDashboardPage() {
             </Card>
           </div>
         </>
+      )}
+
+      {/* ── WhatsApp Report Preview Modal ── */}
+      {(waPreview || waStatus) && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <MessageCircle size={16} className="text-green-600"/>
+                <span className="font-semibold text-sm text-gray-800">WhatsApp Report Preview</span>
+              </div>
+              <button
+                onClick={() => { setWaPreview(null); setWaStatus(null); }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={16}/>
+              </button>
+            </div>
+
+            {/* Status */}
+            {waStatus && (
+              <div className={cn(
+                "mx-5 mt-3 px-3 py-2 rounded-lg text-xs font-medium",
+                waStatus.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
+              )}>
+                {waStatus.ok
+                  ? "✅ Sent successfully via WhatsApp"
+                  : `⚠️ ${waStatus.error ?? "Send failed"}`}
+              </div>
+            )}
+
+            {/* Report preview */}
+            {waPreview && (
+              <div className="flex-1 overflow-y-auto px-5 py-4">
+                <div className="bg-[#DCF8C6] rounded-xl p-4 text-sm whitespace-pre-wrap font-mono leading-relaxed text-gray-800 shadow-sm">
+                  {waPreview}
+                </div>
+              </div>
+            )}
+
+            <div className="px-5 pb-4 pt-2 flex justify-end">
+              <button
+                onClick={() => { setWaPreview(null); setWaStatus(null); }}
+                className="text-xs border border-gray-200 px-4 py-1.5 rounded-lg text-gray-600 hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
