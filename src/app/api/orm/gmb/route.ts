@@ -12,6 +12,15 @@ import { NextResponse }    from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions }     from "@/lib/auth";
 import { db as prisma }    from "@/lib/db";
+import crypto              from "crypto";
+
+// Returns the Monday of the current week (UTC)
+function getThisMonday(): Date {
+  const now = new Date();
+  const day = now.getUTCDay();              // 0=Sun … 6=Sat
+  const diff = day === 0 ? -6 : 1 - day;   // shift back to Monday
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + diff));
+}
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -93,4 +102,51 @@ export async function GET() {
       needsAttention,
     },
   });
+}
+
+// ── POST /api/orm/gmb — create a new GMB location ─────────────────────────
+
+export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) return NextResponse.json({ error: "not logged in" }, { status: 401 });
+
+  const user = await (prisma as any).user.findUnique({ where: { email: session.user.email } });
+  if (!user || !["HEAD_OF_MARKETING", "TEAM_LEAD"].includes(user.role)) {
+    return NextResponse.json({ error: "admin only" }, { status: 403 });
+  }
+
+  const { business, city, country, name, address, gmbUrl, mapsUrl, displayLabel, handledBy, status, currentRating } = await req.json();
+
+  if (!business || !city || !country || !name || !gmbUrl) {
+    return NextResponse.json({ error: "Missing required fields: business, city, country, name, gmbUrl" }, { status: 400 });
+  }
+
+  const locationId = crypto.createHash("sha1").update(gmbUrl).digest("hex").slice(0, 25);
+
+  try {
+    const location = await (prisma as any).gmbLocation.create({
+      data: {
+        id: locationId,
+        business, city, country, name,
+        address:      address      ?? "",
+        gmbUrl,
+        mapsUrl:      mapsUrl      ?? null,
+        displayLabel: displayLabel ?? null,
+        handledBy:    handledBy    ?? null,
+        status:       status       ?? "active",
+      },
+    });
+
+    if (currentRating != null) {
+      const weekStart = getThisMonday();
+      await (prisma as any).gmbRatingSnapshot.create({
+        data: { locationId: location.id, weekStart, rating: Number(currentRating), source: "manual" },
+      });
+    }
+
+    return NextResponse.json({ success: true, id: location.id });
+  } catch (e: any) {
+    if (e.code === "P2002") return NextResponse.json({ error: "A location with this GMB URL already exists." }, { status: 409 });
+    throw e;
+  }
 }
