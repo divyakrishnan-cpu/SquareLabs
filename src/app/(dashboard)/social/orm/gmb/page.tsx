@@ -602,13 +602,14 @@ export default function GmbDashboardPage() {
   const [editLoc,        setEditLoc]        = useState<GmbLocation | null>(null);
 
   // ── Scrape state ──
-  const [scraping,     setScraping]     = useState(false);
-  const [scrapeResult, setScrapeResult] = useState<{
+  const [scraping,        setScraping]        = useState(false);
+  const [scrapeResult,    setScrapeResult]    = useState<{
     message: string;
     found: number;
     total: number;
-    results: { id: string; name: string; city: string; business: string; rating: number | null; source: string }[];
+    results: { id: string; name: string; city: string; business: string; rating: number | null; reviewCount: number | null; source: string }[];
   } | null>(null);
+  const [apiKeyError,     setApiKeyError]     = useState<string | null>(null);
 
   // ── Filters (global — affect both summary cards and table) ──
   const [bizFilter,     setBizFilter]     = useState("All");
@@ -643,10 +644,14 @@ export default function GmbDashboardPage() {
   }
 
   async function runScrape() {
-    setScraping(true); setScrapeResult(null);
+    setScraping(true); setScrapeResult(null); setApiKeyError(null);
     try {
       const res  = await fetch("/api/orm/gmb/scrape-ratings", { method: "POST" });
       const json = await res.json();
+      if (json.error === "missing_api_key") {
+        setApiKeyError(json.message);
+        return;
+      }
       if (json.error) { alert(json.error); return; }
       setScrapeResult(json);
       await load();   // reload to show newly populated ratings
@@ -1110,6 +1115,63 @@ export default function GmbDashboardPage() {
         />
       )}
 
+      {/* ── API key missing modal ── */}
+      {apiKeyError && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setApiKeyError(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
+                  <AlertTriangle size={16} className="text-amber-600"/>
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-800">Google Places API Key Required</h2>
+                  <p className="text-[11px] text-gray-500 mt-0.5">One-time setup needed to enable live rating scraping</p>
+                </div>
+              </div>
+              <button onClick={() => setApiKeyError(null)} className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100">
+                <X size={15}/>
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-xs text-gray-600 leading-relaxed">
+                The scraper uses the <strong>Google Places API</strong> to reliably fetch live ratings. To enable it:
+              </p>
+              <ol className="space-y-3 text-xs text-gray-700">
+                <li className="flex gap-3">
+                  <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center flex-shrink-0 text-[10px]">1</span>
+                  <span>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">console.cloud.google.com</a> → select or create a project</span>
+                </li>
+                <li className="flex gap-3">
+                  <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center flex-shrink-0 text-[10px]">2</span>
+                  <span>Go to <strong>APIs &amp; Services → Library</strong> → search for <strong>Places API</strong> → Enable it</span>
+                </li>
+                <li className="flex gap-3">
+                  <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center flex-shrink-0 text-[10px]">3</span>
+                  <span>Go to <strong>APIs &amp; Services → Credentials</strong> → Create an API key</span>
+                </li>
+                <li className="flex gap-3">
+                  <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center flex-shrink-0 text-[10px]">4</span>
+                  <span>In Vercel, go to your project → <strong>Settings → Environment Variables</strong> → add:</span>
+                </li>
+              </ol>
+              <div className="bg-gray-900 rounded-lg px-4 py-3 font-mono text-xs text-green-400 select-all">
+                GOOGLE_PLACES_API_KEY=your_key_here
+              </div>
+              <p className="text-[11px] text-gray-400">After adding the key, redeploy your app and click &quot;Scrape Ratings&quot; again.</p>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => setApiKeyError(null)}
+                className="px-4 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Scrape results modal ── */}
       {scrapeResult && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setScrapeResult(null)}>
@@ -1138,7 +1200,8 @@ export default function GmbDashboardPage() {
                   <tr>
                     <th className="text-left px-5 py-2.5 text-gray-500 font-semibold">Location</th>
                     <th className="text-left px-5 py-2.5 text-gray-500 font-semibold">Business</th>
-                    <th className="text-center px-5 py-2.5 text-gray-500 font-semibold">Rating Found</th>
+                    <th className="text-center px-5 py-2.5 text-gray-500 font-semibold">Rating</th>
+                    <th className="text-center px-5 py-2.5 text-gray-500 font-semibold">Reviews</th>
                     <th className="text-center px-5 py-2.5 text-gray-500 font-semibold">Status</th>
                   </tr>
                 </thead>
@@ -1156,6 +1219,9 @@ export default function GmbDashboardPage() {
                           <span className="text-gray-300">—</span>
                         )}
                       </td>
+                      <td className="px-5 py-2.5 text-center text-gray-500 text-[11px]">
+                        {r.reviewCount != null ? r.reviewCount.toLocaleString() : "—"}
+                      </td>
                       <td className="px-5 py-2.5 text-center">
                         {r.rating !== null ? (
                           <span className="bg-green-100 text-green-700 text-[10px] font-medium px-1.5 py-0.5 rounded">Saved ✓</span>
@@ -1170,7 +1236,7 @@ export default function GmbDashboardPage() {
             </div>
 
             <div className="px-6 py-4 border-t border-gray-100 text-[11px] text-gray-400">
-              Locations not found by the scraper can be updated manually via the ✏️ Edit button in the table.
+              Ratings fetched via Google Places API. Locations not found can be updated manually via the ✏️ Edit button in the table.
             </div>
           </div>
         </div>
