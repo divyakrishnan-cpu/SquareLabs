@@ -6,7 +6,7 @@ import { useState } from "react";
 import {
   BarChart2, FileText, MessageSquare, CalendarDays,
   PenTool, Settings, ChevronDown, ChevronRight,
-  Share2, Menu, X,
+  Share2, Menu, X, MapPin,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +17,8 @@ const NAV = [
     children: [
       { label: "Dashboard",          href: "/social/dashboard", icon: BarChart2 },
       { label: "Content Calendar",   href: "/social/calendar",  icon: CalendarDays },
-      { label: "ORM",                href: "/social/orm",       icon: MessageSquare },
+      { label: "ORM — Comments",     href: "/social/orm",       icon: MessageSquare },
+      { label: "GMB Ratings",        href: "/social/orm/gmb",   icon: MapPin },
     ],
   },
 ];
@@ -90,7 +91,10 @@ export function Sidebar() {
                   <div className="ml-3 mt-0.5 space-y-0.5 border-l border-gray-100 pl-2">
                     {group.children.map(item => {
                       const Icon = item.icon;
-                      const active = pathname === item.href || pathname.startsWith(item.href + "/");
+                      // Exact match for /social/orm so GMB sub-page doesn't also highlight it
+                      const active = item.href === "/social/orm"
+                        ? pathname === "/social/orm"
+                        : pathname === item.href || pathname.startsWith(item.href + "/");
                       return (
                         <Link key={item.href} href={item.href}
                           className={cn("sidebar-item text-[13px]", active && "active")}
