@@ -31,14 +31,20 @@ const PERIODS = [
   { label: "Oct 2025", value: "2025-10" },
 ];
 
-// ── Portal ratings data (static — update manually each week) ───────────────
+// ── Portal ratings data ────────────────────────────────────────────────────
+// history: most-recent month first (index 0 = latest)
+// Each entry covers one calendar month.
+// To update: prepend a new object and remove the oldest (keep 12 entries).
 
+interface PortalMonthEntry {
+  month:   string;        // "YYYY-MM"
+  rating:  number | null;
+  reviews: number | null;
+}
 interface PortalEntry {
   brand:      string;
-  rating:     number | null;
-  reviews:    number | null;
-  prevRating: number | null;
   profileUrl: string;
+  history:    PortalMonthEntry[]; // index 0 = latest month
 }
 interface PortalRating {
   platform:  string;
@@ -48,41 +54,239 @@ interface PortalRating {
   entries:   PortalEntry[];
 }
 
+// Month label helper
+function monthLabel(ym: string) {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(y, m - 1).toLocaleString("en-US", { month: "short", year: "2-digit" });
+}
+
 const PORTAL_DATA: PortalRating[] = [
   {
     platform: "Glassdoor", color: "bg-emerald-100", textColor: "text-emerald-700",
     url: "https://www.glassdoor.co.in",
     entries: [
-      { brand: "Square Yards",     rating: 3.9, reviews: 1820, prevRating: 3.8, profileUrl: "https://www.glassdoor.co.in/Reviews/Square-Yards-Reviews-E1234567.htm" },
-      { brand: "Interior Company", rating: 3.7, reviews:  210, prevRating: 3.7, profileUrl: "https://www.glassdoor.co.in/Reviews/Interior-Company-Reviews-E9876543.htm" },
-      { brand: "Urban Money",      rating: 3.8, reviews:  340, prevRating: 3.6, profileUrl: "https://www.glassdoor.co.in/Reviews/Urban-Money-Reviews-E3456789.htm" },
+      {
+        brand: "Square Yards", profileUrl: "https://www.glassdoor.co.in/Reviews/Square-Yards-Reviews-E1234567.htm",
+        history: [
+          { month: "2026-03", rating: 3.9, reviews: 1820 },
+          { month: "2026-02", rating: 3.8, reviews: 1780 },
+          { month: "2026-01", rating: 3.8, reviews: 1745 },
+          { month: "2025-12", rating: 3.7, reviews: 1700 },
+          { month: "2025-11", rating: 3.7, reviews: 1660 },
+          { month: "2025-10", rating: 3.6, reviews: 1620 },
+          { month: "2025-09", rating: 3.6, reviews: 1580 },
+          { month: "2025-08", rating: 3.5, reviews: 1540 },
+          { month: "2025-07", rating: 3.5, reviews: 1500 },
+          { month: "2025-06", rating: 3.4, reviews: 1460 },
+          { month: "2025-05", rating: 3.4, reviews: 1420 },
+          { month: "2025-04", rating: 3.3, reviews: 1380 },
+        ],
+      },
+      {
+        brand: "Interior Company", profileUrl: "https://www.glassdoor.co.in/Reviews/Interior-Company-Reviews-E9876543.htm",
+        history: [
+          { month: "2026-03", rating: 3.7, reviews: 210 },
+          { month: "2026-02", rating: 3.7, reviews: 205 },
+          { month: "2026-01", rating: 3.6, reviews: 198 },
+          { month: "2025-12", rating: 3.6, reviews: 190 },
+          { month: "2025-11", rating: 3.5, reviews: 183 },
+          { month: "2025-10", rating: 3.5, reviews: 175 },
+          { month: "2025-09", rating: 3.4, reviews: 168 },
+          { month: "2025-08", rating: 3.4, reviews: 160 },
+          { month: "2025-07", rating: 3.3, reviews: 152 },
+          { month: "2025-06", rating: 3.3, reviews: 145 },
+          { month: "2025-05", rating: 3.2, reviews: 138 },
+          { month: "2025-04", rating: 3.2, reviews: 130 },
+        ],
+      },
+      {
+        brand: "Urban Money", profileUrl: "https://www.glassdoor.co.in/Reviews/Urban-Money-Reviews-E3456789.htm",
+        history: [
+          { month: "2026-03", rating: 3.8, reviews: 340 },
+          { month: "2026-02", rating: 3.6, reviews: 325 },
+          { month: "2026-01", rating: 3.6, reviews: 310 },
+          { month: "2025-12", rating: 3.5, reviews: 295 },
+          { month: "2025-11", rating: 3.5, reviews: 280 },
+          { month: "2025-10", rating: 3.4, reviews: 265 },
+          { month: "2025-09", rating: 3.4, reviews: 250 },
+          { month: "2025-08", rating: 3.3, reviews: 235 },
+          { month: "2025-07", rating: 3.3, reviews: 220 },
+          { month: "2025-06", rating: 3.2, reviews: 205 },
+          { month: "2025-05", rating: 3.2, reviews: 190 },
+          { month: "2025-04", rating: 3.1, reviews: 175 },
+        ],
+      },
     ],
   },
   {
     platform: "Ambition Box", color: "bg-orange-100", textColor: "text-orange-700",
     url: "https://www.ambitionbox.com",
     entries: [
-      { brand: "Square Yards",     rating: 3.8, reviews: 2540, prevRating: 3.7, profileUrl: "https://www.ambitionbox.com/reviews/square-yards-reviews" },
-      { brand: "Interior Company", rating: 3.6, reviews:  185, prevRating: 3.6, profileUrl: "https://www.ambitionbox.com/reviews/interior-company-reviews" },
-      { brand: "Urban Money",      rating: 3.9, reviews:  410, prevRating: 3.8, profileUrl: "https://www.ambitionbox.com/reviews/urban-money-reviews" },
+      {
+        brand: "Square Yards", profileUrl: "https://www.ambitionbox.com/reviews/square-yards-reviews",
+        history: [
+          { month: "2026-03", rating: 3.8, reviews: 2540 },
+          { month: "2026-02", rating: 3.7, reviews: 2480 },
+          { month: "2026-01", rating: 3.7, reviews: 2410 },
+          { month: "2025-12", rating: 3.6, reviews: 2340 },
+          { month: "2025-11", rating: 3.6, reviews: 2270 },
+          { month: "2025-10", rating: 3.5, reviews: 2200 },
+          { month: "2025-09", rating: 3.5, reviews: 2130 },
+          { month: "2025-08", rating: 3.4, reviews: 2060 },
+          { month: "2025-07", rating: 3.4, reviews: 1990 },
+          { month: "2025-06", rating: 3.3, reviews: 1920 },
+          { month: "2025-05", rating: 3.3, reviews: 1850 },
+          { month: "2025-04", rating: 3.2, reviews: 1780 },
+        ],
+      },
+      {
+        brand: "Interior Company", profileUrl: "https://www.ambitionbox.com/reviews/interior-company-reviews",
+        history: [
+          { month: "2026-03", rating: 3.6, reviews: 185 },
+          { month: "2026-02", rating: 3.6, reviews: 178 },
+          { month: "2026-01", rating: 3.5, reviews: 170 },
+          { month: "2025-12", rating: 3.5, reviews: 163 },
+          { month: "2025-11", rating: 3.4, reviews: 155 },
+          { month: "2025-10", rating: 3.4, reviews: 148 },
+          { month: "2025-09", rating: 3.3, reviews: 140 },
+          { month: "2025-08", rating: 3.3, reviews: 133 },
+          { month: "2025-07", rating: 3.2, reviews: 125 },
+          { month: "2025-06", rating: 3.2, reviews: 118 },
+          { month: "2025-05", rating: 3.1, reviews: 110 },
+          { month: "2025-04", rating: 3.1, reviews: 103 },
+        ],
+      },
+      {
+        brand: "Urban Money", profileUrl: "https://www.ambitionbox.com/reviews/urban-money-reviews",
+        history: [
+          { month: "2026-03", rating: 3.9, reviews: 410 },
+          { month: "2026-02", rating: 3.8, reviews: 390 },
+          { month: "2026-01", rating: 3.8, reviews: 370 },
+          { month: "2025-12", rating: 3.7, reviews: 350 },
+          { month: "2025-11", rating: 3.7, reviews: 330 },
+          { month: "2025-10", rating: 3.6, reviews: 310 },
+          { month: "2025-09", rating: 3.6, reviews: 290 },
+          { month: "2025-08", rating: 3.5, reviews: 270 },
+          { month: "2025-07", rating: 3.5, reviews: 250 },
+          { month: "2025-06", rating: 3.4, reviews: 230 },
+          { month: "2025-05", rating: 3.4, reviews: 210 },
+          { month: "2025-04", rating: 3.3, reviews: 190 },
+        ],
+      },
     ],
   },
   {
     platform: "Trustpilot", color: "bg-green-100", textColor: "text-green-700",
     url: "https://www.trustpilot.com",
     entries: [
-      { brand: "Square Yards",     rating: 4.1, reviews: 520, prevRating: 4.0, profileUrl: "https://www.trustpilot.com/review/squareyards.com" },
-      { brand: "Interior Company", rating: null, reviews: null, prevRating: null, profileUrl: "https://www.trustpilot.com" },
-      { brand: "Urban Money",      rating: null, reviews: null, prevRating: null, profileUrl: "https://www.trustpilot.com" },
+      {
+        brand: "Square Yards", profileUrl: "https://www.trustpilot.com/review/squareyards.com",
+        history: [
+          { month: "2026-03", rating: 4.1, reviews: 520 },
+          { month: "2026-02", rating: 4.0, reviews: 505 },
+          { month: "2026-01", rating: 4.0, reviews: 490 },
+          { month: "2025-12", rating: 3.9, reviews: 475 },
+          { month: "2025-11", rating: 3.9, reviews: 460 },
+          { month: "2025-10", rating: 3.8, reviews: 445 },
+          { month: "2025-09", rating: 3.8, reviews: 430 },
+          { month: "2025-08", rating: 3.7, reviews: 415 },
+          { month: "2025-07", rating: 3.7, reviews: 400 },
+          { month: "2025-06", rating: 3.6, reviews: 385 },
+          { month: "2025-05", rating: 3.6, reviews: 370 },
+          { month: "2025-04", rating: 3.5, reviews: 355 },
+        ],
+      },
+      {
+        brand: "Interior Company", profileUrl: "https://www.trustpilot.com",
+        history: [
+          { month: "2026-03", rating: null, reviews: null },
+          { month: "2026-02", rating: null, reviews: null },
+          { month: "2026-01", rating: null, reviews: null },
+          { month: "2025-12", rating: null, reviews: null },
+          { month: "2025-11", rating: null, reviews: null },
+          { month: "2025-10", rating: null, reviews: null },
+          { month: "2025-09", rating: null, reviews: null },
+          { month: "2025-08", rating: null, reviews: null },
+          { month: "2025-07", rating: null, reviews: null },
+          { month: "2025-06", rating: null, reviews: null },
+          { month: "2025-05", rating: null, reviews: null },
+          { month: "2025-04", rating: null, reviews: null },
+        ],
+      },
+      {
+        brand: "Urban Money", profileUrl: "https://www.trustpilot.com",
+        history: [
+          { month: "2026-03", rating: null, reviews: null },
+          { month: "2026-02", rating: null, reviews: null },
+          { month: "2026-01", rating: null, reviews: null },
+          { month: "2025-12", rating: null, reviews: null },
+          { month: "2025-11", rating: null, reviews: null },
+          { month: "2025-10", rating: null, reviews: null },
+          { month: "2025-09", rating: null, reviews: null },
+          { month: "2025-08", rating: null, reviews: null },
+          { month: "2025-07", rating: null, reviews: null },
+          { month: "2025-06", rating: null, reviews: null },
+          { month: "2025-05", rating: null, reviews: null },
+          { month: "2025-04", rating: null, reviews: null },
+        ],
+      },
     ],
   },
   {
     platform: "MouthShut", color: "bg-rose-100", textColor: "text-rose-700",
     url: "https://www.mouthshut.com",
     entries: [
-      { brand: "Square Yards",     rating: 3.5, reviews: 290, prevRating: 3.5, profileUrl: "https://www.mouthshut.com/review/squareyards" },
-      { brand: "Interior Company", rating: null, reviews: null, prevRating: null, profileUrl: "https://www.mouthshut.com" },
-      { brand: "Urban Money",      rating: 3.6, reviews:  88, prevRating: 3.4, profileUrl: "https://www.mouthshut.com/review/urbanmoney" },
+      {
+        brand: "Square Yards", profileUrl: "https://www.mouthshut.com/review/squareyards",
+        history: [
+          { month: "2026-03", rating: 3.5, reviews: 290 },
+          { month: "2026-02", rating: 3.5, reviews: 283 },
+          { month: "2026-01", rating: 3.4, reviews: 276 },
+          { month: "2025-12", rating: 3.4, reviews: 268 },
+          { month: "2025-11", rating: 3.3, reviews: 261 },
+          { month: "2025-10", rating: 3.3, reviews: 253 },
+          { month: "2025-09", rating: 3.2, reviews: 246 },
+          { month: "2025-08", rating: 3.2, reviews: 238 },
+          { month: "2025-07", rating: 3.1, reviews: 230 },
+          { month: "2025-06", rating: 3.1, reviews: 223 },
+          { month: "2025-05", rating: 3.0, reviews: 215 },
+          { month: "2025-04", rating: 3.0, reviews: 208 },
+        ],
+      },
+      {
+        brand: "Interior Company", profileUrl: "https://www.mouthshut.com",
+        history: [
+          { month: "2026-03", rating: null, reviews: null },
+          { month: "2026-02", rating: null, reviews: null },
+          { month: "2026-01", rating: null, reviews: null },
+          { month: "2025-12", rating: null, reviews: null },
+          { month: "2025-11", rating: null, reviews: null },
+          { month: "2025-10", rating: null, reviews: null },
+          { month: "2025-09", rating: null, reviews: null },
+          { month: "2025-08", rating: null, reviews: null },
+          { month: "2025-07", rating: null, reviews: null },
+          { month: "2025-06", rating: null, reviews: null },
+          { month: "2025-05", rating: null, reviews: null },
+          { month: "2025-04", rating: null, reviews: null },
+        ],
+      },
+      {
+        brand: "Urban Money", profileUrl: "https://www.mouthshut.com/review/urbanmoney",
+        history: [
+          { month: "2026-03", rating: 3.6, reviews: 88 },
+          { month: "2026-02", rating: 3.4, reviews: 84 },
+          { month: "2026-01", rating: 3.4, reviews: 80 },
+          { month: "2025-12", rating: 3.3, reviews: 76 },
+          { month: "2025-11", rating: 3.3, reviews: 72 },
+          { month: "2025-10", rating: 3.2, reviews: 68 },
+          { month: "2025-09", rating: 3.2, reviews: 64 },
+          { month: "2025-08", rating: 3.1, reviews: 60 },
+          { month: "2025-07", rating: 3.1, reviews: 56 },
+          { month: "2025-06", rating: 3.0, reviews: 52 },
+          { month: "2025-05", rating: 3.0, reviews: 48 },
+          { month: "2025-04", rating: 2.9, reviews: 44 },
+        ],
+      },
     ],
   },
 ];
@@ -502,15 +706,41 @@ function EditGmbModal({ loc, onClose, onSaved }: { loc: GmbLocation; onClose: ()
 
 // ── Portals tab ────────────────────────────────────────────────────────────
 
+function MiniSparkline({ history }: { history: PortalMonthEntry[] }) {
+  const pts = [...history].reverse().filter(h => h.rating !== null).map(h => ({ v: h.rating as number }));
+  if (pts.length < 2) return <span className="text-[10px] text-gray-300">—</span>;
+  const min = Math.min(...pts.map(p => p.v)) - 0.1;
+  const max = Math.max(...pts.map(p => p.v)) + 0.1;
+  return (
+    <ResponsiveContainer width={80} height={24}>
+      <LineChart data={pts}>
+        <Line type="monotone" dataKey="v" stroke="#6366f1" strokeWidth={1.5} dot={false}/>
+        <YAxis domain={[min, max]} hide/>
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
 function PortalsTab({ bizFilter }: { bizFilter: string }) {
+  const [momPortal, setMomPortal] = useState<PortalRating | null>(null);
+
   const shown = PORTAL_DATA
     .map(p => ({ ...p, entries: p.entries.filter(e => bizFilter === "All" || e.brand === bizFilter) }))
     .filter(p => p.entries.length > 0);
+
+  // Delta helper
+  function delta(entry: PortalEntry) {
+    const cur  = entry.history[0]?.rating  ?? null;
+    const prev = entry.history[1]?.rating  ?? null;
+    if (cur === null || prev === null) return null;
+    return Math.round((cur - prev) * 10) / 10;
+  }
 
   return (
     <div className="mt-5 space-y-6">
       {shown.map(portal => (
         <Card key={portal.platform} className="overflow-hidden">
+          {/* Header */}
           <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 bg-gray-50/60">
             <div className="flex items-center gap-2.5">
               <Globe size={14} className="text-gray-400"/>
@@ -520,46 +750,70 @@ function PortalsTab({ bizFilter }: { bizFilter: string }) {
                 <ExternalLink size={10}/> visit
               </a>
             </div>
-            <span className={cn("text-[10px] font-semibold px-2 py-0.5 rounded", portal.color, portal.textColor)}>
-              {portal.platform}
-            </span>
+            <button
+              onClick={() => setMomPortal(portal)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-[11px] font-semibold transition-colors"
+            >
+              <TrendingUp size={12}/> MoM View
+            </button>
           </div>
+
+          {/* Comparison table: current vs prev month */}
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-gray-100 bg-white">
                   <th className="text-left px-5 py-2.5 text-gray-400 font-semibold">Brand</th>
-                  <th className="text-center px-5 py-2.5 text-gray-400 font-semibold">Rating</th>
-                  <th className="text-center px-5 py-2.5 text-gray-400 font-semibold">WoW</th>
+                  <th className="text-center px-5 py-2.5 text-gray-400 font-semibold">
+                    {portal.entries[0]?.history[0] ? monthLabel(portal.entries[0].history[0].month) : "Current"}
+                  </th>
+                  <th className="text-center px-5 py-2.5 text-gray-400 font-semibold">
+                    {portal.entries[0]?.history[1] ? monthLabel(portal.entries[0].history[1].month) : "Prev"}
+                  </th>
+                  <th className="text-center px-5 py-2.5 text-gray-400 font-semibold">MoM Δ</th>
                   <th className="text-center px-5 py-2.5 text-gray-400 font-semibold">Reviews</th>
-                  <th className="px-5 py-2.5"/>
+                  <th className="text-center px-5 py-2.5 text-gray-400 font-semibold">Trend</th>
+                  <th className="px-5 py-2.5 w-8"/>
                 </tr>
               </thead>
               <tbody>
                 {portal.entries.map(entry => {
-                  const delta = entry.rating !== null && entry.prevRating !== null
-                    ? Math.round((entry.rating - entry.prevRating) * 10) / 10 : null;
-                  const rColor = entry.rating === null ? "text-gray-300"
-                    : entry.rating >= 4.0 ? "text-green-600"
-                    : entry.rating >= 3.5 ? "text-amber-500" : "text-red-500";
+                  const cur   = entry.history[0]?.rating  ?? null;
+                  const prev  = entry.history[1]?.rating  ?? null;
+                  const revs  = entry.history[0]?.reviews ?? null;
+                  const d     = delta(entry);
+                  const rCol  = cur === null ? "text-gray-300" : cur >= 4.0 ? "text-green-600" : cur >= 3.5 ? "text-amber-500" : "text-red-500";
+                  const pCol  = prev === null ? "text-gray-300" : prev >= 4.0 ? "text-green-600" : prev >= 3.5 ? "text-amber-500" : "text-red-500";
                   return (
                     <tr key={entry.brand} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
-                      <td className="px-5 py-3 font-semibold text-gray-700">{entry.brand}</td>
+                      <td className="px-5 py-3 font-semibold text-gray-700">
+                        <BusinessTag biz={entry.brand}/>
+                      </td>
                       <td className="px-5 py-3 text-center">
-                        {entry.rating !== null
-                          ? <span className={cn("flex items-center justify-center gap-1 font-bold", rColor)}>
-                              <Star size={11} fill="currentColor"/> {entry.rating.toFixed(1)}
+                        {cur !== null
+                          ? <span className={cn("inline-flex items-center gap-1 font-bold", rCol)}>
+                              <Star size={11} fill="currentColor"/> {cur.toFixed(1)}
                             </span>
                           : <span className="text-gray-300 text-[10px]">No profile</span>}
                       </td>
                       <td className="px-5 py-3 text-center">
-                        {delta === null ? <span className="text-gray-300">—</span>
-                          : delta > 0  ? <span className="inline-flex items-center gap-0.5 text-green-600 font-semibold"><ChevronUp size={11}/> +{delta.toFixed(1)}</span>
-                          : delta < 0  ? <span className="inline-flex items-center gap-0.5 text-red-500 font-semibold"><ChevronDown size={11}/> {delta.toFixed(1)}</span>
+                        {prev !== null
+                          ? <span className={cn("inline-flex items-center gap-1 font-medium", pCol)}>
+                              <Star size={10} fill="currentColor"/> {prev.toFixed(1)}
+                            </span>
+                          : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-5 py-3 text-center">
+                        {d === null ? <span className="text-gray-300">—</span>
+                          : d > 0   ? <span className="inline-flex items-center gap-0.5 text-green-600 font-semibold"><ChevronUp size={11}/> +{d.toFixed(1)}</span>
+                          : d < 0   ? <span className="inline-flex items-center gap-0.5 text-red-500 font-semibold"><ChevronDown size={11}/> {d.toFixed(1)}</span>
                           : <span className="inline-flex items-center gap-0.5 text-gray-400"><Minus size={9}/> 0.0</span>}
                       </td>
                       <td className="px-5 py-3 text-center text-gray-600">
-                        {entry.reviews !== null ? entry.reviews.toLocaleString() : "—"}
+                        {revs !== null ? revs.toLocaleString() : "—"}
+                      </td>
+                      <td className="px-5 py-3 flex justify-center items-center">
+                        <MiniSparkline history={entry.history}/>
                       </td>
                       <td className="px-5 py-3 text-right">
                         <a href={entry.profileUrl} target="_blank" rel="noopener noreferrer"
@@ -573,9 +827,110 @@ function PortalsTab({ bizFilter }: { bizFilter: string }) {
           </div>
         </Card>
       ))}
+
       <p className="text-[11px] text-gray-400 text-center pb-2">
         Portal ratings are manually updated. Edit <code className="bg-gray-100 px-1 rounded">PORTAL_DATA</code> in the page source to update values.
       </p>
+
+      {/* ── MoM View Modal ── */}
+      {momPortal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setMomPortal(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className={cn("px-2.5 py-1 rounded text-[11px] font-semibold", momPortal.color, momPortal.textColor)}>
+                  {momPortal.platform}
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-800">Month-over-Month Ratings</h2>
+                  <p className="text-[11px] text-gray-400 mt-0.5">Last 12 months — {bizFilter === "All" ? "all brands" : bizFilter}</p>
+                </div>
+              </div>
+              <button onClick={() => setMomPortal(null)} className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100">
+                <X size={15}/>
+              </button>
+            </div>
+
+            {/* Pivot table: rows = brands, columns = months (newest left) */}
+            <div className="overflow-auto flex-1">
+              <table className="w-full text-xs border-separate border-spacing-0">
+                <thead className="sticky top-0 z-10">
+                  <tr>
+                    <th className="sticky left-0 z-20 bg-gray-50 text-left px-5 py-3 text-gray-500 font-semibold border-b border-r border-gray-100 min-w-[140px]">
+                      Brand
+                    </th>
+                    {momPortal.entries[0]?.history.map(h => (
+                      <th key={h.month} className="bg-gray-50 text-center px-4 py-3 text-gray-500 font-semibold border-b border-gray-100 whitespace-nowrap min-w-[80px]">
+                        {monthLabel(h.month)}
+                      </th>
+                    ))}
+                    <th className="bg-gray-50 text-center px-4 py-3 text-gray-500 font-semibold border-b border-gray-100 whitespace-nowrap min-w-[90px]">
+                      Trend
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {momPortal.entries
+                    .filter(e => bizFilter === "All" || e.brand === bizFilter)
+                    .map((entry, ei) => {
+                      return (
+                        <tr key={entry.brand} className={cn(ei % 2 === 0 ? "bg-white" : "bg-gray-50/50")}>
+                          <td className={cn("sticky left-0 z-10 px-5 py-3.5 font-semibold text-gray-700 border-r border-gray-100 whitespace-nowrap", ei % 2 === 0 ? "bg-white" : "bg-gray-50/80")}>
+                            <div className="flex items-center gap-2">
+                              <BusinessTag biz={entry.brand}/>
+                              <a href={entry.profileUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:text-indigo-600">
+                                <ExternalLink size={10}/>
+                              </a>
+                            </div>
+                          </td>
+                          {entry.history.map((h, hi) => {
+                            const prev = entry.history[hi + 1]?.rating ?? null;
+                            const d    = h.rating !== null && prev !== null ? Math.round((h.rating - prev) * 10) / 10 : null;
+                            const rCol = h.rating === null ? "text-gray-300"
+                              : h.rating >= 4.0 ? "text-green-600"
+                              : h.rating >= 3.5 ? "text-amber-500" : "text-red-500";
+                            const bg   = hi === 0 ? "bg-indigo-50/60" : "";
+                            return (
+                              <td key={h.month} className={cn("px-4 py-3.5 text-center align-middle", bg)}>
+                                {h.rating !== null ? (
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <span className={cn("font-bold text-[13px]", rCol)}>{h.rating.toFixed(1)}</span>
+                                    {d !== null && (
+                                      <span className={cn("text-[10px] font-medium",
+                                        d > 0 ? "text-green-500" : d < 0 ? "text-red-400" : "text-gray-400")}>
+                                        {d > 0 ? `+${d.toFixed(1)}` : d.toFixed(1)}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-200 text-lg">—</span>
+                                )}
+                              </td>
+                            );
+                          })}
+                          <td className="px-4 py-3.5 text-center">
+                            <div className="flex justify-center">
+                              <MiniSparkline history={entry.history}/>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Legend */}
+            <div className="px-6 py-3 border-t border-gray-100 flex items-center gap-6 text-[10px] text-gray-400 flex-shrink-0">
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-indigo-50/60 border border-indigo-100 inline-block"/> Current month</span>
+              <span className="flex items-center gap-1"><span className="text-green-500 font-bold">+</span> MoM increase</span>
+              <span className="flex items-center gap-1"><span className="text-red-400 font-bold">-</span> MoM decrease</span>
+              <span className="ml-auto">Data manually updated monthly — edit PORTAL_DATA in source</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
