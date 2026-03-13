@@ -11,6 +11,7 @@ import { NextResponse }  from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions }   from "@/lib/auth";
 import { db as prisma }  from "@/lib/db";
+import crypto            from "crypto";
 
 // ── Historical ratings from the Google Doc ────────────────────────────────
 // Columns: [Oct, Nov, Dec, Jan, Feb, Mar]  (null = no data for that month)
@@ -428,12 +429,16 @@ export async function POST() {
     return NextResponse.json({ error: "admin only" }, { status: 403 });
   }
 
+  // Wipe existing data so orphaned rows from any previous bad seed don't accumulate
+  await (prisma as any).gmbRatingSnapshot.deleteMany({});
+  await (prisma as any).gmbLocation.deleteMany({});
+
   let locationsCreated = 0;
   let snapshotsCreated = 0;
 
   for (const entry of GMB_DATA) {
-    // Upsert location — use a deterministic id derived from gmbUrl so re-runs are idempotent
-    const locationId = Buffer.from(entry.gmbUrl).toString("base64").replace(/[^a-zA-Z0-9]/g, "").slice(0, 25);
+    // Deterministic id via SHA-1 of the full gmbUrl — avoids collisions from shared URL prefix
+    const locationId = crypto.createHash("sha1").update(entry.gmbUrl).digest("hex").slice(0, 25);
     const location = await (prisma as any).gmbLocation.upsert({
       where:  { id: locationId },
       update: {
