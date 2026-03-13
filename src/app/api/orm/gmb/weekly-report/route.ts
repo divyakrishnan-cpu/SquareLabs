@@ -6,14 +6,22 @@
  *  1. Reads the latest gmb_rating_snapshot for every active location
  *  2. Computes delta vs the previous snapshot
  *  3. Builds a WhatsApp-formatted summary report
- *  4. Sends via Meta WhatsApp Cloud API
+ *  4. Sends via Twilio WhatsApp API (free sandbox available)
  *  5. Returns the report text so the dashboard can preview it too
  *
  * Required env vars:
- *   WHATSAPP_BUSINESS_TOKEN      — Meta System User access token
- *   WHATSAPP_PHONE_NUMBER_ID     — From the WhatsApp Business dashboard
- *   WHATSAPP_REPORT_RECIPIENT    — Phone number in E.164 format, e.g. +919876543210
+ *   TWILIO_ACCOUNT_SID           — From console.twilio.com
+ *   TWILIO_AUTH_TOKEN            — From console.twilio.com
+ *   TWILIO_WHATSAPP_FROM         — Twilio sandbox: whatsapp:+14155238886
+ *                                  (or your approved number once live)
+ *   TWILIO_WHATSAPP_TO           — Recipient in E.164, e.g. whatsapp:+919876543210
  *   CRON_SECRET                  — For authenticating Vercel Cron GET requests
+ *
+ * Free sandbox setup (takes ~2 min):
+ *   1. Sign up at twilio.com (free, $15 trial credit)
+ *   2. Go to Messaging → Try it out → Send a WhatsApp message
+ *   3. Send "join <sandbox-word>" to +1 415 523 8886 from your WhatsApp
+ *   4. Copy Account SID + Auth Token from the console dashboard
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -21,34 +29,36 @@ import { getServerSession }          from "next-auth";
 import { authOptions }               from "@/lib/auth";
 import { db as prisma }              from "@/lib/db";
 
-const CRON_SECRET = process.env.CRON_SECRET ?? "squarelabs-cron";
-const WA_TOKEN    = process.env.WHATSAPP_BUSINESS_TOKEN;
-const WA_PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
-const WA_TO       = process.env.WHATSAPP_REPORT_RECIPIENT;
+const CRON_SECRET    = process.env.CRON_SECRET ?? "squarelabs-cron";
+const TWILIO_SID     = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_TOKEN   = process.env.TWILIO_AUTH_TOKEN;
+const TWILIO_FROM    = process.env.TWILIO_WHATSAPP_FROM;   // e.g. whatsapp:+14155238886
+const TWILIO_TO      = process.env.TWILIO_WHATSAPP_TO;     // e.g. whatsapp:+919876543210
 
-// ── WhatsApp sender ────────────────────────────────────────────────────────
+// ── Twilio WhatsApp sender ─────────────────────────────────────────────────
 
 async function sendWhatsApp(message: string): Promise<{ ok: boolean; error?: string }> {
-  if (!WA_TOKEN || !WA_PHONE_ID || !WA_TO) {
-    return { ok: false, error: "WhatsApp env vars not configured (WHATSAPP_BUSINESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_REPORT_RECIPIENT)" };
+  if (!TWILIO_SID || !TWILIO_TOKEN || !TWILIO_FROM || !TWILIO_TO) {
+    return {
+      ok: false,
+      error: "Twilio env vars not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM, TWILIO_WHATSAPP_TO in Vercel.",
+    };
   }
 
-  const url = `https://graph.facebook.com/v20.0/${WA_PHONE_ID}/messages`;
-  const body = {
-    messaging_product: "whatsapp",
-    to:                WA_TO,
-    type:              "text",
-    text:              { body: message },
-  };
+  const url  = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`;
+  const auth = Buffer.from(`${TWILIO_SID}:${TWILIO_TOKEN}`).toString("base64");
+  const body = new URLSearchParams({ From: TWILIO_FROM, To: TWILIO_TO, Body: message });
 
   try {
     const res  = await fetch(url, {
       method:  "POST",
-      headers: { Authorization: `Bearer ${WA_TOKEN}`, "Content-Type": "application/json" },
-      body:    JSON.stringify(body),
+      headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
+      body:    body.toString(),
     });
     const data = await res.json();
-    if (data.error) return { ok: false, error: data.error.message };
+    if (data.error_message || data.status === "failed" || data.status === "undelivered") {
+      return { ok: false, error: data.error_message ?? data.message ?? "Send failed" };
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: String(e) };
