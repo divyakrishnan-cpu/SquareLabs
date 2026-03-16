@@ -29,7 +29,9 @@ model User {
   calendarItems    ContentCalendarItem[]
   scripts          ContentScript[]
   series           ContentSeries[]
-  metaIntegrations MetaIntegration[]
+  metaIntegrations     MetaIntegration[]
+  youtubeIntegrations  YoutubeIntegration[]
+  linkedinIntegrations LinkedinIntegration[]
 
   @@map("users")
 }
@@ -459,6 +461,54 @@ model EmployeeReviewSnapshot {
 
   @@unique([platformId, weekStart])
   @@map("employee_review_snapshots")
+}
+
+// ── YouTube Integration ────────────────────────────────────────────────────
+
+model YoutubeIntegration {
+  id              String    @id @default(cuid())
+  userId          String
+  channelId       String                        // YouTube channel ID (UCxxx...)
+  channelName     String?
+  channelHandle   String?                       // @handle (without @)
+  thumbnailUrl    String?
+  subscriberCount Int?
+  videoCount      Int?
+  viewCount       BigInt?
+  accessToken     String    @db.Text
+  refreshToken    String?   @db.Text
+  tokenExpiresAt  DateTime?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, channelId])
+  @@map("youtube_integrations")
+}
+
+// ── LinkedIn Integration ───────────────────────────────────────────────────
+
+model LinkedinIntegration {
+  id              String    @id @default(cuid())
+  userId          String
+  organizationId  String                        // URN e.g. "urn:li:organization:12345"
+  name            String?
+  vanityName      String?                       // company URL slug
+  logoUrl         String?
+  followerCount   Int?
+  accessToken     String    @db.Text
+  refreshToken    String?   @db.Text
+  tokenExpiresAt  DateTime?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, organizationId])
+  @@map("linkedin_integrations")
 }
 
 // ── SM-05: Publish Notifications ──────────────────────────────────────────

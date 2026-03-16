@@ -7,176 +7,229 @@ import { Card }     from "@/components/ui/Card";
 import {
   CheckCircle2, XCircle, ExternalLink, RefreshCw,
   Plus, Loader2, AlertTriangle, Users, Image, Film,
-  TrendingUp, Globe,
+  TrendingUp, Globe, Trash2, Youtube, Linkedin,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// ── Types ─────────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────
 
 interface MetaAccount {
-  id: string;
-  pageId: string;
-  pageName: string;
-  vertical: string | null;
-  instagramAccountId: string | null;
-  instagramHandle: string | null;
-  instagramName: string | null;
-  profilePictureUrl: string | null;
-  followersCount: number | null;
-  followsCount: number | null;
-  mediaCount: number | null;
-  tokenExpiresAt: string | null;
+  id: string; pageId: string; pageName: string; vertical: string | null;
+  instagramAccountId: string | null; instagramHandle: string | null;
+  instagramName: string | null; profilePictureUrl: string | null;
+  followersCount: number | null; followsCount: number | null;
+  mediaCount: number | null; tokenExpiresAt: string | null;
+}
+interface YoutubeAccount {
+  id: string; channelId: string; channelName: string | null;
+  channelHandle: string | null; thumbnailUrl: string | null;
+  subscriberCount: number | null; videoCount: number | null;
+  viewCount: string | null; tokenExpiresAt: string | null;
+}
+interface LinkedinAccount {
+  id: string; organizationId: string; name: string | null;
+  vanityName: string | null; logoUrl: string | null;
+  followerCount: number | null; tokenExpiresAt: string | null;
 }
 
-// ── Static integration config ─────────────────────────────────────────────
-
-const INTEGRATIONS = [
-  {
-    id: "meta",
-    name: "Instagram & Facebook",
-    description:
-      "Connect via Meta's official Graph API to retrieve followers, reach, impressions, post performance, audience demographics and story metrics.",
-    icon: "📸",
-    color: "bg-gradient-to-br from-pink-500 to-purple-600",
-  },
-  {
-    id: "linkedin",
-    name: "LinkedIn",
-    description: "Connect LinkedIn Company Pages to publish professional content.",
-    icon: "💼",
-    color: "bg-blue-700",
-    connected: true,
-    accounts: ["Square Yards", "Interior Company"],
-  },
-  {
-    id: "youtube",
-    name: "YouTube",
-    description: "Connect YouTube channels to upload videos and manage content.",
-    icon: "▶️",
-    color: "bg-red-600",
-    connected: false,
-    accounts: [],
-  },
-  {
-    id: "twitter",
-    name: "X (Twitter)",
-    description: "Connect X accounts to publish tweets and threads.",
-    icon: "𝕏",
-    color: "bg-gray-900",
-    connected: false,
-    accounts: [],
-  },
-  {
-    id: "whatsapp",
-    name: "WhatsApp Business",
-    description: "Connect WhatsApp Business to receive post-publish notifications.",
-    icon: "💬",
-    color: "bg-green-500",
-    connected: true,
-    accounts: ["+91 98765 43210"],
-  },
-  {
-    id: "slack",
-    name: "Slack",
-    description: "Connect Slack workspace to receive team notifications and alerts.",
-    icon: "🔷",
-    color: "bg-purple-600",
-    connected: true,
-    accounts: ["#social-media-team"],
-  },
-];
-
-const VERTICALS = [
-  { id: "SY_INDIA",       label: "Square Yards India",  accounts: { instagram: "@squareyards", facebook: "Square Yards India", linkedin: "Square Yards", youtube: "Square Yards" } },
-  { id: "SY_UAE",         label: "Square Yards UAE",    accounts: { instagram: "@squareyardsuae", facebook: "Square Yards UAE", linkedin: "", youtube: "" } },
-  { id: "INTERIOR",       label: "Interior Company",    accounts: { instagram: "@interiorco", facebook: "", linkedin: "Interior Company", youtube: "" } },
-  { id: "SQUARE_CONNECT", label: "Square Connect",      accounts: { instagram: "@squareconnect", facebook: "", linkedin: "Square Connect", youtube: "" } },
-  { id: "UM",             label: "UM",                  accounts: { instagram: "@um_realty", facebook: "", linkedin: "", youtube: "" } },
-];
+// ── Static config ──────────────────────────────────────────────────────────
 
 const VERTICAL_LABELS: Record<string, string> = {
   SY_INDIA: "Square Yards India", SY_UAE: "Square Yards UAE",
   INTERIOR: "Interior Company",   SQUARE_CONNECT: "Square Connect", UM: "UM",
 };
 
-// ── Helper: days until token expires ─────────────────────────────────────
+const VERTICALS = [
+  { id: "SY_INDIA", label: "Square Yards India",
+    accounts: { instagram: "@squareyards", facebook: "Square Yards India", linkedin: "Square Yards", youtube: "Square Yards" } },
+  { id: "SY_UAE",   label: "Square Yards UAE",
+    accounts: { instagram: "@squareyardsuae", facebook: "Square Yards UAE", linkedin: "", youtube: "" } },
+  { id: "INTERIOR", label: "Interior Company",
+    accounts: { instagram: "@interiorco", facebook: "", linkedin: "Interior Company", youtube: "" } },
+  { id: "SQUARE_CONNECT", label: "Square Connect",
+    accounts: { instagram: "@squareconnect", facebook: "", linkedin: "Square Connect", youtube: "" } },
+  { id: "UM",       label: "UM",
+    accounts: { instagram: "@um_realty", facebook: "", linkedin: "", youtube: "" } },
+];
+
+// ── Helper ─────────────────────────────────────────────────────────────────
 
 function tokenDaysLeft(expiresAt: string | null) {
   if (!expiresAt) return null;
-  const days = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000);
-  return days;
+  return Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000);
 }
 
-// ── Inner component (uses useSearchParams — must be inside Suspense) ───────
+function TokenBadge({ expiresAt }: { expiresAt: string | null }) {
+  const days = tokenDaysLeft(expiresAt);
+  if (days === null) return null;
+  if (days < 0) return (
+    <span className="text-[10px] text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+      <AlertTriangle size={8}/> Token expired
+    </span>
+  );
+  if (days < 7) return (
+    <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+      <AlertTriangle size={8}/> Expires in {days}d
+    </span>
+  );
+  return (
+    <span className="text-[10px] text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">
+      Token valid · {days}d left
+    </span>
+  );
+}
+
+// ── Setup guide card ───────────────────────────────────────────────────────
+
+function SetupGuide({ platform }: { platform: "youtube" | "linkedin" }) {
+  const yt = platform === "youtube";
+  return (
+    <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-xs text-amber-800 space-y-3">
+      <p className="font-semibold">⚡ One-time setup required ({yt ? "3" : "4"} steps):</p>
+      {yt ? (
+        <ol className="space-y-1.5 list-none">
+          <li>1. Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="underline font-medium">console.cloud.google.com</a> → Create/select a project.</li>
+          <li>2. Enable <strong>YouTube Data API v3</strong> and <strong>YouTube Analytics API</strong>.</li>
+          <li>3. Go to <strong>APIs &amp; Services → Credentials → Create OAuth 2.0 Client ID</strong> (type: Web App).
+            Add redirect URI: <code className="bg-amber-100 px-1 rounded text-[10px]">https://square-labs.vercel.app/api/youtube/callback</code></li>
+          <li>4. Add to Vercel env vars:
+            <code className="bg-amber-100 px-1 rounded text-[10px] ml-1">GOOGLE_CLIENT_ID</code> and
+            <code className="bg-amber-100 px-1 rounded text-[10px] ml-1">GOOGLE_CLIENT_SECRET</code> → Redeploy.
+          </li>
+        </ol>
+      ) : (
+        <ol className="space-y-1.5 list-none">
+          <li>1. Go to <a href="https://www.linkedin.com/developers/apps" target="_blank" rel="noopener noreferrer" className="underline font-medium">linkedin.com/developers/apps</a> → Create app.</li>
+          <li>2. Under <strong>Auth</strong>, add redirect URL: <code className="bg-amber-100 px-1 rounded text-[10px]">https://square-labs.vercel.app/api/linkedin/callback</code></li>
+          <li>3. Under <strong>Products</strong>, request access to <strong>Marketing Developer Platform</strong> (enables company page management).</li>
+          <li>4. Add to Vercel env vars:
+            <code className="bg-amber-100 px-1 rounded text-[10px] ml-1">LINKEDIN_CLIENT_ID</code> and
+            <code className="bg-amber-100 px-1 rounded text-[10px] ml-1">LINKEDIN_CLIENT_SECRET</code> → Redeploy.
+          </li>
+        </ol>
+      )}
+    </div>
+  );
+}
+
+// ── Inner component ────────────────────────────────────────────────────────
 
 function SettingsInner() {
   const searchParams = useSearchParams();
-  const [activeTab,      setActiveTab]     = useState<"integrations" | "accounts" | "sync">("integrations");
-  const [metaAccounts,   setMetaAccounts]  = useState<MetaAccount[]>([]);
-  const [loadingMeta,    setLoadingMeta]   = useState(true);
-  const [disconnecting,  setDisconnecting] = useState<string | null>(null);
-  const [showSteps,      setShowSteps]     = useState(false);
+  const [activeTab, setActiveTab] = useState<"integrations" | "accounts" | "sync">("integrations");
 
-  // Sync data state
-  const [syncAccount,    setSyncAccount]   = useState<MetaAccount | null>(null);
-  const [syncData,       setSyncData]      = useState<{
-    overview: any; posts: any[]; audience: any[]; stories: any[];
-  } | null>(null);
-  const [syncLoading,    setSyncLoading]   = useState(false);
-  const [syncError,      setSyncError]     = useState<string | null>(null);
+  // Meta
+  const [metaAccounts,  setMetaAccounts]  = useState<MetaAccount[]>([]);
+  const [loadingMeta,   setLoadingMeta]   = useState(true);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
+  const [resettingMeta, setResettingMeta] = useState(false);
 
-  // Success / error banners from OAuth redirect
+  // YouTube
+  const [ytAccounts,    setYtAccounts]    = useState<YoutubeAccount[]>([]);
+  const [loadingYt,     setLoadingYt]     = useState(true);
+  const [disconnectingYt, setDisconnectingYt] = useState<string | null>(null);
+
+  // LinkedIn
+  const [liAccounts,    setLiAccounts]    = useState<LinkedinAccount[]>([]);
+  const [loadingLi,     setLoadingLi]     = useState(true);
+  const [disconnectingLi, setDisconnectingLi] = useState<string | null>(null);
+
+  // Sync tab
+  const [syncAccount,   setSyncAccount]   = useState<MetaAccount | null>(null);
+  const [syncData,      setSyncData]      = useState<{ overview: any; posts: any[]; audience: any[]; stories: any[] } | null>(null);
+  const [syncLoading,   setSyncLoading]   = useState(false);
+  const [syncError,     setSyncError]     = useState<string | null>(null);
+
   const successFlag = searchParams.get("success");
   const errorFlag   = searchParams.get("error");
   const pagesCount  = searchParams.get("pages");
   const igCount     = searchParams.get("ig");
+  const ytChannels  = searchParams.get("channels");
 
-  // ── Fetch connected Meta accounts ────────────────────────────────────────
+  // ── Fetch functions ──────────────────────────────────────────────────────
 
-  const fetchMetaAccounts = useCallback(async () => {
+  const fetchMeta = useCallback(async () => {
     setLoadingMeta(true);
     try {
       const res  = await fetch("/api/meta/accounts");
       const data = await res.json();
       setMetaAccounts(data.accounts ?? []);
-    } catch {
-      setMetaAccounts([]);
-    } finally {
-      setLoadingMeta(false);
-    }
+    } catch { setMetaAccounts([]); }
+    finally  { setLoadingMeta(false); }
   }, []);
 
-  useEffect(() => { fetchMetaAccounts(); }, [fetchMetaAccounts]);
+  const fetchYt = useCallback(async () => {
+    setLoadingYt(true);
+    try {
+      const res  = await fetch("/api/youtube/accounts");
+      const data = await res.json();
+      setYtAccounts(data.accounts ?? []);
+    } catch { setYtAccounts([]); }
+    finally  { setLoadingYt(false); }
+  }, []);
 
-  // Auto-switch to Sync tab after successful connection
-  useEffect(() => {
-    if (successFlag === "meta_connected") setActiveTab("sync");
-  }, [successFlag]);
+  const fetchLi = useCallback(async () => {
+    setLoadingLi(true);
+    try {
+      const res  = await fetch("/api/linkedin/accounts");
+      const data = await res.json();
+      setLiAccounts(data.accounts ?? []);
+    } catch { setLiAccounts([]); }
+    finally  { setLoadingLi(false); }
+  }, []);
 
-  // ── Disconnect a Meta page ────────────────────────────────────────────────
+  useEffect(() => { fetchMeta(); fetchYt(); fetchLi(); }, [fetchMeta, fetchYt, fetchLi]);
+  useEffect(() => { if (successFlag === "meta_connected") setActiveTab("sync"); }, [successFlag]);
 
-  async function disconnect(pageId: string) {
+  // ── Disconnect handlers ──────────────────────────────────────────────────
+
+  async function disconnectMeta(pageId: string) {
     setDisconnecting(pageId);
     try {
       await fetch("/api/meta/accounts", {
-        method:  "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ pageId }),
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pageId }),
       });
       setMetaAccounts(prev => prev.filter(a => a.pageId !== pageId));
-    } finally {
-      setDisconnecting(null);
-    }
+    } finally { setDisconnecting(null); }
   }
 
-  // ── Pull sync data for a chosen account ──────────────────────────────────
+  async function resetAllMeta() {
+    if (!confirm("This will remove ALL Facebook/Instagram connections. You'll need to reconnect. Continue?")) return;
+    setResettingMeta(true);
+    try {
+      await fetch("/api/meta/reset", { method: "POST" });
+      setMetaAccounts([]);
+    } finally { setResettingMeta(false); }
+  }
+
+  async function disconnectYt(channelId: string) {
+    setDisconnectingYt(channelId);
+    try {
+      await fetch("/api/youtube/accounts", {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelId }),
+      });
+      setYtAccounts(prev => prev.filter(a => a.channelId !== channelId));
+    } finally { setDisconnectingYt(null); }
+  }
+
+  async function disconnectLi(organizationId: string) {
+    setDisconnectingLi(organizationId);
+    try {
+      await fetch("/api/linkedin/accounts", {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organizationId }),
+      });
+      setLiAccounts(prev => prev.filter(a => a.organizationId !== organizationId));
+    } finally { setDisconnectingLi(null); }
+  }
+
+  // ── Sync data ────────────────────────────────────────────────────────────
 
   async function loadSyncData(account: MetaAccount) {
     if (!account.instagramAccountId) return;
-    setSyncAccount(account);
-    setSyncData(null);
-    setSyncError(null);
-    setSyncLoading(true);
+    setSyncAccount(account); setSyncData(null); setSyncError(null); setSyncLoading(true);
     const qp = `?accountId=${account.instagramAccountId}`;
     try {
       const [ovRes, postsRes, audRes, storiesRes] = await Promise.all([
@@ -188,37 +241,48 @@ function SettingsInner() {
       const [ov, posts, aud, stories] = await Promise.all([
         ovRes.json(), postsRes.json(), audRes.json(), storiesRes.json(),
       ]);
-      setSyncData({
-        overview: ov.profile,
-        posts:    posts.posts ?? [],
-        audience: aud.audience ?? [],
-        stories:  stories.stories ?? [],
-      });
-    } catch (e) {
-      setSyncError(String(e));
-    } finally {
-      setSyncLoading(false);
-    }
+      setSyncData({ overview: ov.profile, posts: posts.posts ?? [], audience: aud.audience ?? [], stories: stories.stories ?? [] });
+    } catch (e) { setSyncError(String(e)); }
+    finally { setSyncLoading(false); }
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────
-
   const hasMetaAccounts = metaAccounts.length > 0;
+  const hasYtAccounts   = ytAccounts.length > 0;
+  const hasLiAccounts   = liAccounts.length > 0;
+
+  // ── Render ───────────────────────────────────────────────────────────────
 
   return (
     <>
       <Header title="Settings" subtitle="Manage your social media integrations and account connections" />
 
-      {/* OAuth result banners */}
+      {/* ── OAuth result banners ── */}
       {successFlag === "meta_connected" && (
         <div className="mt-4 bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-start gap-3 text-sm text-green-700">
           <CheckCircle2 size={16} className="shrink-0 mt-0.5"/>
           <div>
-            <p className="font-semibold">All brands connected successfully!</p>
+            <p className="font-semibold">Facebook &amp; Instagram connected!</p>
             <p className="text-xs text-green-600 mt-0.5">
-              {pagesCount ?? "0"} Facebook Pages and {igCount ?? "0"} Instagram Business Accounts are now synced.
-              Their data is available in the <strong>Synced Data</strong> tab below.
+              {pagesCount ?? "0"} Facebook Pages and {igCount ?? "0"} Instagram accounts synced.
             </p>
+          </div>
+        </div>
+      )}
+      {successFlag === "youtube_connected" && (
+        <div className="mt-4 bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-start gap-3 text-sm text-green-700">
+          <CheckCircle2 size={16} className="shrink-0 mt-0.5"/>
+          <div>
+            <p className="font-semibold">YouTube connected!</p>
+            <p className="text-xs text-green-600 mt-0.5">{ytChannels ?? "0"} channel(s) synced successfully.</p>
+          </div>
+        </div>
+      )}
+      {successFlag === "linkedin_connected" && (
+        <div className="mt-4 bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-start gap-3 text-sm text-green-700">
+          <CheckCircle2 size={16} className="shrink-0 mt-0.5"/>
+          <div>
+            <p className="font-semibold">LinkedIn connected!</p>
+            <p className="text-xs text-green-600 mt-0.5">{pagesCount ?? "0"} company page(s) synced.</p>
           </div>
         </div>
       )}
@@ -228,63 +292,59 @@ function SettingsInner() {
           <div>
             {errorFlag === "meta_no_pages" ? (
               <>
-                <p className="font-semibold">Connected but no pages were found.</p>
-                <p className="text-xs text-red-500 mt-1">
-                  Facebook granted access but returned 0 pages. In your{" "}
-                  <a href="https://developers.facebook.com" target="_blank" rel="noreferrer" className="underline font-medium">
-                    Meta App settings
-                  </a>
-                  , go to <strong>App Review → Permissions</strong> and make sure{" "}
-                  <strong>business_management</strong> is listed. Then try connecting again.
-                  Also confirm your Facebook account has Admin access on at least one page in{" "}
-                  <a href="https://business.facebook.com" target="_blank" rel="noreferrer" className="underline font-medium">
-                    Business Manager
-                  </a>.
-                </p>
+                <p className="font-semibold">Connected but no pages found.</p>
+                <p className="text-xs text-red-500 mt-1">Make sure <strong>business_management</strong> scope is approved in your Meta App and your Facebook account has Admin access on at least one page.</p>
+              </>
+            ) : errorFlag === "youtube_no_channels" ? (
+              <>
+                <p className="font-semibold">YouTube connected but no channels found.</p>
+                <p className="text-xs text-red-500 mt-1">Ensure the Google account you used has YouTube channels linked to it.</p>
+              </>
+            ) : errorFlag === "linkedin_no_pages" ? (
+              <>
+                <p className="font-semibold">LinkedIn connected but no company pages found.</p>
+                <p className="text-xs text-red-500 mt-1">You need to be an Admin of at least one LinkedIn Company Page, and the <strong>Marketing Developer Platform</strong> product must be approved in your LinkedIn app.</p>
               </>
             ) : (
               <>
-                <p className="font-semibold">Meta connection failed ({errorFlag}).</p>
-                <p className="text-xs text-red-500 mt-1">Please try again or check your Meta App configuration.</p>
+                <p className="font-semibold">Connection failed ({errorFlag}).</p>
+                <p className="text-xs text-red-500 mt-1">Please try again or check your app configuration.</p>
               </>
             )}
           </div>
         </div>
       )}
 
-      {/* Tabs */}
+      {/* ── Tabs ── */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg mt-4 w-fit">
         {[
           { key: "integrations", label: "Platform Integrations" },
           { key: "accounts",     label: "Vertical Accounts" },
           { key: "sync",         label: `Synced Data${hasMetaAccounts ? ` (${metaAccounts.length})` : ""}` },
         ].map(tab => (
-          <button key={tab.key}
-            onClick={() => setActiveTab(tab.key as any)}
+          <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
             className={cn(
               "px-4 py-1.5 rounded-md text-xs font-medium transition-all",
-              activeTab === tab.key
-                ? "bg-white text-accent-600 shadow-sm"
-                : "text-gray-500 hover:text-gray-700"
+              activeTab === tab.key ? "bg-white text-accent-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
             )}>
             {tab.label}
           </button>
         ))}
       </div>
 
-      {/* ── INTEGRATIONS TAB ──────────────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {/* INTEGRATIONS TAB                                                  */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
       {activeTab === "integrations" && (
         <div className="mt-5 space-y-4">
 
-          {/* ── Meta card (Instagram + Facebook, real OAuth) ──── */}
+          {/* ── Meta (Instagram + Facebook) ────────────────────────────── */}
           <Card className="p-5 border-pink-100">
             <div className="flex items-start gap-4">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 bg-gradient-to-br from-pink-500 to-purple-600">
                 📸
               </div>
               <div className="flex-1 min-w-0">
-
-                {/* Header row */}
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <h3 className="font-semibold text-gray-900 text-sm">Instagram &amp; Facebook</h3>
                   {loadingMeta ? (
@@ -303,24 +363,19 @@ function SettingsInner() {
                 </div>
 
                 <p className="text-xs text-gray-500 mb-4">
-                  One click connects <strong>all brands</strong> under your Square Yards Business Portfolio —
-                  Square Yards, Interior Company, Square Connect, Urban Money and more.
-                  SquareLabs auto-detects each brand from the Page name.
+                  One click connects <strong>all brands</strong> under your Square Yards Business Portfolio.
+                  SquareLabs auto-detects each brand from the page name.
                 </p>
 
-                {/* ── Connected: show pages grouped by brand ── */}
+                {/* Connected pages list */}
                 {!loadingMeta && hasMetaAccounts && (
                   <div className="mb-4">
                     <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Connected Pages</p>
                     <div className="space-y-2">
                       {metaAccounts.map(acc => {
-                        const days         = tokenDaysLeft(acc.tokenExpiresAt);
-                        const expiringSoon = days !== null && days < 7;
-                        const brandLabel   = acc.vertical ? (VERTICAL_LABELS[acc.vertical] ?? acc.vertical) : "Other";
+                        const brandLabel = acc.vertical ? (VERTICAL_LABELS[acc.vertical] ?? acc.vertical) : "Other";
                         return (
-                          <div key={acc.id}
-                            className="flex items-center gap-3 bg-gray-50 rounded-xl p-3 border border-gray-100">
-                            {/* Avatar */}
+                          <div key={acc.id} className="flex items-center gap-3 bg-gray-50 rounded-xl p-3 border border-gray-100">
                             {acc.profilePictureUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={acc.profilePictureUrl} alt={acc.instagramHandle ?? ""}
@@ -330,21 +385,13 @@ function SettingsInner() {
                                 {(acc.instagramHandle ?? acc.pageName ?? "?")[0].toUpperCase()}
                               </div>
                             )}
-
-                            {/* Info */}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <p className="text-xs font-semibold text-gray-800">
                                   {acc.instagramHandle ? `@${acc.instagramHandle}` : acc.pageName}
                                 </p>
-                                <span className="text-[10px] bg-accent-50 text-accent-700 px-1.5 py-0.5 rounded-full font-medium">
-                                  {brandLabel}
-                                </span>
-                                {expiringSoon && (
-                                  <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
-                                    <AlertTriangle size={8}/> Token expires {days}d
-                                  </span>
-                                )}
+                                <span className="text-[10px] bg-accent-50 text-accent-700 px-1.5 py-0.5 rounded-full font-medium">{brandLabel}</span>
+                                <TokenBadge expiresAt={acc.tokenExpiresAt}/>
                               </div>
                               <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                                 {acc.pageName && acc.instagramHandle && (
@@ -352,7 +399,7 @@ function SettingsInner() {
                                 )}
                                 {acc.followersCount != null && (
                                   <span className="text-[10px] text-gray-500 flex items-center gap-0.5">
-                                    <Users size={8}/> {acc.followersCount.toLocaleString()} followers
+                                    <Users size={8}/> {acc.followersCount.toLocaleString()}
                                   </span>
                                 )}
                                 {!acc.instagramAccountId && (
@@ -360,19 +407,14 @@ function SettingsInner() {
                                 )}
                               </div>
                             </div>
-
-                            {/* Actions */}
                             <div className="flex gap-1.5 shrink-0">
                               {acc.instagramAccountId && (
-                                <button
-                                  onClick={() => { setActiveTab("sync"); loadSyncData(acc); }}
+                                <button onClick={() => { setActiveTab("sync"); loadSyncData(acc); }}
                                   className="text-[10px] text-accent-600 border border-accent-200 px-2 py-1 rounded-lg hover:bg-accent-50 flex items-center gap-1">
                                   <TrendingUp size={9}/> Data
                                 </button>
                               )}
-                              <button
-                                onClick={() => disconnect(acc.pageId)}
-                                disabled={disconnecting === acc.pageId}
+                              <button onClick={() => disconnectMeta(acc.pageId)} disabled={disconnecting === acc.pageId}
                                 className="text-[10px] text-red-500 border border-red-200 px-2 py-1 rounded-lg hover:bg-red-50 disabled:opacity-50">
                                 {disconnecting === acc.pageId ? <Loader2 size={9} className="animate-spin"/> : "Remove"}
                               </button>
@@ -384,116 +426,228 @@ function SettingsInner() {
                   </div>
                 )}
 
-                {/* ── How-to guide (collapsible) ── */}
+                {/* Setup tip when not connected */}
                 {!hasMetaAccounts && !loadingMeta && (
                   <div className="mb-4 bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800">
                     <p className="font-semibold mb-1">⚡ Quick setup (3 steps):</p>
-                    <p className="mb-0.5">1. Make sure <code className="bg-amber-100 px-1 rounded">META_APP_ID</code> &amp; <code className="bg-amber-100 px-1 rounded">META_APP_SECRET</code> are in Vercel env vars.</p>
+                    <p className="mb-0.5">1. Add <code className="bg-amber-100 px-1 rounded">META_APP_ID</code> &amp; <code className="bg-amber-100 px-1 rounded">META_APP_SECRET</code> to Vercel env vars.</p>
                     <p className="mb-0.5">2. In your Meta App → Facebook Login → Settings, add redirect URI: <code className="bg-amber-100 px-1 rounded text-[10px]">https://square-labs.vercel.app/api/meta/callback</code></p>
-                    <p>3. Click the button below and when Facebook asks which pages to share — <strong>select ALL pages</strong> from your Square Yards portfolio.</p>
+                    <p>3. Click Connect and <strong>select ALL pages</strong> from the Square Yards portfolio.</p>
                   </div>
                 )}
 
-                {/* ── Important: Select ALL pages note ── */}
                 {!loadingMeta && (
                   <div className="mb-3 bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-700">
-                    <p className="font-semibold flex items-center gap-1.5 mb-1">
-                      💡 When the Facebook dialog opens:
-                    </p>
-                    <p>
-                      Facebook will ask <em>"Which pages do you want to share?"</em> — click{" "}
-                      <strong className="text-blue-800">"Select all Pages"</strong> or manually tick every brand page
-                      (Square Yards India, Square Yards UAE, Interior Company, Square Connect, Urban Money, etc.).
-                      All selected pages are stored in one connection — you won&apos;t need to reconnect per brand.
-                    </p>
+                    <p className="font-semibold mb-1">💡 When the Facebook dialog opens:</p>
+                    <p>Click <strong>"Select all Pages"</strong> to connect all brands in one go. All selected pages are stored in a single connection.</p>
                   </div>
                 )}
 
-                {/* ── Connect / Reconnect button ── */}
+                {/* Buttons */}
                 <div className="flex gap-2 flex-wrap items-center">
                   <a href="/api/meta/connect"
                     className="inline-flex items-center gap-2 text-[11px] bg-gradient-to-r from-pink-500 to-purple-600 text-white px-4 py-2 rounded-lg hover:opacity-90 font-semibold shadow-sm">
-                    {hasMetaAccounts ? (
-                      <><RefreshCw size={11}/> Reconnect All Brands</>
-                    ) : (
-                      <><Plus size={11}/> Connect All Brands — Square Yards Portfolio</>
-                    )}
+                    {hasMetaAccounts ? <><RefreshCw size={11}/> Reconnect All Brands</> : <><Plus size={11}/> Connect All Brands</>}
                   </a>
                   {hasMetaAccounts && (
-                    <button onClick={fetchMetaAccounts}
+                    <button onClick={fetchMeta}
+                      className="inline-flex items-center gap-1.5 text-[11px] border border-gray-200 text-gray-600 px-3 py-2 rounded-lg hover:bg-gray-50">
+                      <RefreshCw size={10}/> Refresh
+                    </button>
+                  )}
+                  {hasMetaAccounts && (
+                    <button onClick={resetAllMeta} disabled={resettingMeta}
+                      className="inline-flex items-center gap-1.5 text-[11px] border border-red-200 text-red-600 px-3 py-2 rounded-lg hover:bg-red-50 disabled:opacity-50">
+                      {resettingMeta ? <Loader2 size={10} className="animate-spin"/> : <Trash2 size={10}/>}
+                      Reset All Connections
+                    </button>
+                  )}
+                </div>
+                {hasMetaAccounts && (
+                  <p className="text-[10px] text-gray-400 mt-2">Token lasts 60 days. Reconnect before expiry to renew.</p>
+                )}
+              </div>
+            </div>
+          </Card>
+
+          {/* ── YouTube ─────────────────────────────────────────────────── */}
+          <Card className="p-5 border-red-100">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-red-600">
+                <Youtube size={20} className="text-white"/>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <h3 className="font-semibold text-gray-900 text-sm">YouTube</h3>
+                  {loadingYt ? (
+                    <span className="flex items-center gap-1 text-[10px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                      <Loader2 size={9} className="animate-spin"/> Checking…
+                    </span>
+                  ) : hasYtAccounts ? (
+                    <span className="flex items-center gap-1 text-[10px] font-medium text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
+                      <CheckCircle2 size={9}/> {ytAccounts.length} channel{ytAccounts.length > 1 ? "s" : ""} connected
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-[10px] font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                      <XCircle size={9}/> Not connected
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mb-4">
+                  Connect YouTube channels via Google OAuth to track subscribers, views, and video performance across all Square Yards brands.
+                </p>
+
+                {/* Connected channels */}
+                {!loadingYt && hasYtAccounts && (
+                  <div className="mb-4 space-y-2">
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Connected Channels</p>
+                    {ytAccounts.map(ch => (
+                      <div key={ch.id} className="flex items-center gap-3 bg-gray-50 rounded-xl p-3 border border-gray-100">
+                        {ch.thumbnailUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={ch.thumbnailUrl} alt={ch.channelName ?? ""} className="w-9 h-9 rounded-full object-cover border border-gray-200 shrink-0"/>
+                        ) : (
+                          <div className="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                            <Youtube size={16} className="text-red-600"/>
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-xs font-semibold text-gray-800">{ch.channelName ?? ch.channelId}</p>
+                            {ch.channelHandle && <span className="text-[10px] text-gray-400">@{ch.channelHandle}</span>}
+                            <TokenBadge expiresAt={ch.tokenExpiresAt}/>
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5">
+                            {ch.subscriberCount != null && (
+                              <span className="text-[10px] text-gray-500 flex items-center gap-0.5">
+                                <Users size={8}/> {ch.subscriberCount.toLocaleString()} subscribers
+                              </span>
+                            )}
+                            {ch.videoCount != null && (
+                              <span className="text-[10px] text-gray-500">{ch.videoCount.toLocaleString()} videos</span>
+                            )}
+                          </div>
+                        </div>
+                        <button onClick={() => disconnectYt(ch.channelId)} disabled={disconnectingYt === ch.channelId}
+                          className="text-[10px] text-red-500 border border-red-200 px-2 py-1 rounded-lg hover:bg-red-50 disabled:opacity-50 shrink-0">
+                          {disconnectingYt === ch.channelId ? <Loader2 size={9} className="animate-spin"/> : "Remove"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Setup guide when not connected */}
+                {!loadingYt && !hasYtAccounts && <SetupGuide platform="youtube"/>}
+
+                <div className="flex gap-2 flex-wrap mt-4">
+                  <a href="/api/youtube/connect"
+                    className="inline-flex items-center gap-2 text-[11px] bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 font-semibold shadow-sm">
+                    {hasYtAccounts ? <><RefreshCw size={11}/> Reconnect YouTube</> : <><Plus size={11}/> Connect YouTube Channels</>}
+                  </a>
+                  {hasYtAccounts && (
+                    <button onClick={fetchYt}
                       className="inline-flex items-center gap-1.5 text-[11px] border border-gray-200 text-gray-600 px-3 py-2 rounded-lg hover:bg-gray-50">
                       <RefreshCw size={10}/> Refresh
                     </button>
                   )}
                 </div>
-
-                {hasMetaAccounts && (
-                  <p className="text-[10px] text-gray-400 mt-2">
-                    Token lasts 60 days. Click &quot;Reconnect All Brands&quot; before expiry to renew.
-                  </p>
-                )}
-
               </div>
             </div>
           </Card>
 
-          {/* ── Other integrations ──────────────────────────────────────── */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {INTEGRATIONS.filter(i => i.id !== "meta").map(integration => (
-              <Card key={integration.id} className="p-5">
-                <div className="flex items-start gap-4">
-                  <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0", integration.color)}>
-                    <span>{integration.icon}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-semibold text-gray-900 text-sm">{integration.name}</h3>
-                      {(integration as any).connected ? (
-                        <span className="flex items-center gap-1 text-[10px] font-medium text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
-                          <CheckCircle2 size={9}/> Connected
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-[10px] font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                          <XCircle size={9}/> Not connected
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500 mb-3">{integration.description}</p>
-                    {(integration as any).connected && (integration as any).accounts?.length > 0 && (
-                      <div className="mb-3">
-                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Connected accounts</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {(integration as any).accounts.map((acc: string) => (
-                            <span key={acc} className="text-[11px] bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">{acc}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <div className="flex gap-2">
-                      {(integration as any).connected ? (
-                        <>
-                          <button className="text-[11px] border border-gray-200 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50 flex items-center gap-1">
-                            <RefreshCw size={10}/> Reconnect
-                          </button>
-                          <button className="text-[11px] border border-red-200 text-red-500 px-3 py-1.5 rounded-lg hover:bg-red-50">
-                            Disconnect
-                          </button>
-                        </>
-                      ) : (
-                        <button className="text-[11px] bg-accent-500 text-white px-3 py-1.5 rounded-lg hover:bg-accent-600 flex items-center gap-1">
-                          <Plus size={10}/> Connect {integration.name}
-                        </button>
-                      )}
-                    </div>
-                  </div>
+          {/* ── LinkedIn ─────────────────────────────────────────────────── */}
+          <Card className="p-5 border-blue-100">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-blue-700">
+                <Linkedin size={20} className="text-white"/>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <h3 className="font-semibold text-gray-900 text-sm">LinkedIn</h3>
+                  {loadingLi ? (
+                    <span className="flex items-center gap-1 text-[10px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                      <Loader2 size={9} className="animate-spin"/> Checking…
+                    </span>
+                  ) : hasLiAccounts ? (
+                    <span className="flex items-center gap-1 text-[10px] font-medium text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
+                      <CheckCircle2 size={9}/> {liAccounts.length} page{liAccounts.length > 1 ? "s" : ""} connected
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-[10px] font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                      <XCircle size={9}/> Not connected
+                    </span>
+                  )}
                 </div>
-              </Card>
-            ))}
-          </div>
+                <p className="text-xs text-gray-500 mb-4">
+                  Connect LinkedIn Company Pages via OAuth to manage posts and analytics for Square Yards, Interior Company, and other brands.
+                </p>
+
+                {/* Connected pages */}
+                {!loadingLi && hasLiAccounts && (
+                  <div className="mb-4 space-y-2">
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Connected Pages</p>
+                    {liAccounts.map(page => (
+                      <div key={page.id} className="flex items-center gap-3 bg-gray-50 rounded-xl p-3 border border-gray-100">
+                        {page.logoUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={page.logoUrl} alt={page.name ?? ""} className="w-9 h-9 rounded-lg object-cover border border-gray-200 shrink-0"/>
+                        ) : (
+                          <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
+                            <Linkedin size={16} className="text-blue-700"/>
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-xs font-semibold text-gray-800">{page.name ?? page.organizationId}</p>
+                            {page.vanityName && (
+                              <a href={`https://linkedin.com/company/${page.vanityName}`} target="_blank" rel="noopener noreferrer"
+                                className="text-[10px] text-blue-500 hover:underline flex items-center gap-0.5">
+                                <ExternalLink size={8}/> linkedin.com/company/{page.vanityName}
+                              </a>
+                            )}
+                            <TokenBadge expiresAt={page.tokenExpiresAt}/>
+                          </div>
+                          {page.followerCount != null && (
+                            <span className="text-[10px] text-gray-500 flex items-center gap-0.5 mt-0.5">
+                              <Users size={8}/> {page.followerCount.toLocaleString()} followers
+                            </span>
+                          )}
+                        </div>
+                        <button onClick={() => disconnectLi(page.organizationId)} disabled={disconnectingLi === page.organizationId}
+                          className="text-[10px] text-red-500 border border-red-200 px-2 py-1 rounded-lg hover:bg-red-50 disabled:opacity-50 shrink-0">
+                          {disconnectingLi === page.organizationId ? <Loader2 size={9} className="animate-spin"/> : "Remove"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Setup guide when not connected */}
+                {!loadingLi && !hasLiAccounts && <SetupGuide platform="linkedin"/>}
+
+                <div className="flex gap-2 flex-wrap mt-4">
+                  <a href="/api/linkedin/connect"
+                    className="inline-flex items-center gap-2 text-[11px] bg-blue-700 text-white px-4 py-2 rounded-lg hover:bg-blue-800 font-semibold shadow-sm">
+                    {hasLiAccounts ? <><RefreshCw size={11}/> Reconnect LinkedIn</> : <><Plus size={11}/> Connect LinkedIn Pages</>}
+                  </a>
+                  {hasLiAccounts && (
+                    <button onClick={fetchLi}
+                      className="inline-flex items-center gap-1.5 text-[11px] border border-gray-200 text-gray-600 px-3 py-2 rounded-lg hover:bg-gray-50">
+                      <RefreshCw size={10}/> Refresh
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </Card>
+
         </div>
       )}
 
-      {/* ── VERTICAL ACCOUNTS TAB ─────────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {/* VERTICAL ACCOUNTS TAB                                             */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
       {activeTab === "accounts" && (
         <div className="mt-5 space-y-4">
           <div className="callout-info text-sm">
@@ -517,7 +671,9 @@ function SettingsInner() {
         </div>
       )}
 
-      {/* ── SYNCED DATA TAB ───────────────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {/* SYNCED DATA TAB                                                   */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
       {activeTab === "sync" && (
         <div className="mt-5 space-y-5">
           {!hasMetaAccounts && !loadingMeta ? (
@@ -531,12 +687,10 @@ function SettingsInner() {
             </Card>
           ) : (
             <>
-              {/* Account selector */}
               <div className="flex items-center gap-3 flex-wrap">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Choose account:</p>
                 {metaAccounts.map(acc => (
-                  <button key={acc.id}
-                    onClick={() => loadSyncData(acc)}
+                  <button key={acc.id} onClick={() => loadSyncData(acc)}
                     className={cn(
                       "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all",
                       syncAccount?.id === acc.id
@@ -552,22 +706,15 @@ function SettingsInner() {
                 ))}
               </div>
 
-              {/* Prompt before selection */}
               {!syncAccount && !syncLoading && (
-                <Card className="p-6 text-center text-sm text-gray-400">
-                  Select an account above to load its synced data.
-                </Card>
+                <Card className="p-6 text-center text-sm text-gray-400">Select an account above to load its synced data.</Card>
               )}
-
-              {/* Loading state */}
               {syncLoading && (
                 <Card className="p-8 flex items-center justify-center gap-3 text-gray-500 text-sm">
                   <Loader2 size={18} className="animate-spin text-accent-500"/>
                   Fetching live data from Meta Graph API…
                 </Card>
               )}
-
-              {/* Error state */}
               {syncError && (
                 <Card className="p-5 border-red-200 bg-red-50">
                   <p className="text-sm font-medium text-red-700 flex items-center gap-2">
@@ -577,26 +724,20 @@ function SettingsInner() {
                 </Card>
               )}
 
-              {/* Synced data display */}
               {syncData && syncAccount && (
                 <div className="space-y-5">
-
-                  {/* Profile overview */}
                   <Card className="p-5">
                     <div className="flex items-center gap-4 mb-4">
                       {syncAccount.profilePictureUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={syncAccount.profilePictureUrl} alt=""
-                          className="w-14 h-14 rounded-full border-2 border-pink-200 object-cover"/>
+                        <img src={syncAccount.profilePictureUrl} alt="" className="w-14 h-14 rounded-full border-2 border-pink-200 object-cover"/>
                       ) : (
                         <div className="w-14 h-14 rounded-full bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center text-white text-xl font-bold">
                           {(syncData.overview?.username ?? "?")[0].toUpperCase()}
                         </div>
                       )}
                       <div>
-                        <p className="font-bold text-gray-900 text-base">
-                          @{syncData.overview?.username ?? syncAccount.instagramHandle}
-                        </p>
+                        <p className="font-bold text-gray-900 text-base">@{syncData.overview?.username ?? syncAccount.instagramHandle}</p>
                         <p className="text-xs text-gray-500">{syncData.overview?.biography ?? ""}</p>
                         {syncData.overview?.website && (
                           <a href={syncData.overview.website} target="_blank" rel="noreferrer"
@@ -606,30 +747,22 @@ function SettingsInner() {
                         )}
                       </div>
                     </div>
-
                     <div className="grid grid-cols-3 gap-4">
                       <div className="text-center">
-                        <p className="text-2xl font-bold text-gray-900">
-                          {(syncData.overview?.followers_count ?? 0).toLocaleString()}
-                        </p>
+                        <p className="text-2xl font-bold text-gray-900">{(syncData.overview?.followers_count ?? 0).toLocaleString()}</p>
                         <p className="text-xs text-gray-500 mt-0.5 flex items-center justify-center gap-1"><Users size={10}/> Followers</p>
                       </div>
                       <div className="text-center">
-                        <p className="text-2xl font-bold text-gray-900">
-                          {(syncData.overview?.media_count ?? 0).toLocaleString()}
-                        </p>
+                        <p className="text-2xl font-bold text-gray-900">{(syncData.overview?.media_count ?? 0).toLocaleString()}</p>
                         <p className="text-xs text-gray-500 mt-0.5 flex items-center justify-center gap-1"><Image size={10}/> Posts</p>
                       </div>
                       <div className="text-center">
-                        <p className="text-2xl font-bold text-gray-900">
-                          {(syncData.overview?.follows_count ?? 0).toLocaleString()}
-                        </p>
+                        <p className="text-2xl font-bold text-gray-900">{(syncData.overview?.follows_count ?? 0).toLocaleString()}</p>
                         <p className="text-xs text-gray-500 mt-0.5 flex items-center justify-center gap-1"><TrendingUp size={10}/> Following</p>
                       </div>
                     </div>
                   </Card>
 
-                  {/* Latest Posts */}
                   {syncData.posts.length > 0 && (
                     <Card className="overflow-hidden">
                       <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
@@ -648,7 +781,7 @@ function SettingsInner() {
                               <th className="text-right px-4 py-2.5 font-semibold text-gray-500 uppercase tracking-wide text-[10px]">Comments</th>
                               <th className="text-right px-4 py-2.5 font-semibold text-gray-500 uppercase tracking-wide text-[10px]">Reach</th>
                               <th className="text-right px-4 py-2.5 font-semibold text-gray-500 uppercase tracking-wide text-[10px]">Saves</th>
-                              <th className="px-4 py-2.5"></th>
+                              <th className="px-4 py-2.5"/>
                             </tr>
                           </thead>
                           <tbody>
@@ -669,8 +802,7 @@ function SettingsInner() {
                                 <td className="px-4 py-2.5 text-right text-gray-500">{(post.insights?.saved ?? "—").toLocaleString?.() ?? "—"}</td>
                                 <td className="px-4 py-2.5">
                                   {post.permalink && (
-                                    <a href={post.permalink} target="_blank" rel="noreferrer"
-                                      className="text-accent-500 hover:text-accent-600">
+                                    <a href={post.permalink} target="_blank" rel="noreferrer" className="text-accent-500 hover:text-accent-600">
                                       <ExternalLink size={11}/>
                                     </a>
                                   )}
@@ -683,7 +815,6 @@ function SettingsInner() {
                     </Card>
                   )}
 
-                  {/* Stories */}
                   {syncData.stories.length > 0 && (
                     <Card className="p-5">
                       <h3 className="font-semibold text-gray-800 text-sm mb-3 flex items-center gap-2">
@@ -707,7 +838,6 @@ function SettingsInner() {
                     </Card>
                   )}
 
-                  {/* Audience */}
                   {syncData.audience.length > 0 && (
                     <Card className="p-5">
                       <h3 className="font-semibold text-gray-800 text-sm mb-4 flex items-center gap-2">
@@ -744,7 +874,6 @@ function SettingsInner() {
                       </div>
                     </Card>
                   )}
-
                 </div>
               )}
             </>
@@ -754,10 +883,6 @@ function SettingsInner() {
     </>
   );
 }
-
-// ── Default export — wraps inner component in Suspense ────────────────────
-// Required because SettingsInner calls useSearchParams() which opts out of
-// static prerendering and needs a Suspense boundary in Next.js 14.
 
 export default function SettingsPage() {
   return (
