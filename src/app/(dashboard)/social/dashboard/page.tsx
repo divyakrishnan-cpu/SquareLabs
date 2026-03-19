@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useChartColors } from "@/hooks/useChartColors";
 import { Header } from "@/components/layout/Header";
 import { Card }   from "@/components/ui/Card";
 import {
@@ -133,7 +134,8 @@ const V_ACTIVE: Record<string, string> = {
   UM:             "bg-rose-600 text-white shadow-rose-200",
 };
 
-const CHART_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#f97316", "#ec4899"];
+// CHART_COLORS is now user-editable via Settings → Appearance (stored in localStorage).
+// The live value is exposed via useChartColors() inside the component.
 
 // Competitor data per vertical
 const COMPETITORS: Record<string, { name: string; followers: string; engRate: string; postsPerWeek: number; strength: string; gap: string }[]> = {
@@ -336,7 +338,7 @@ function GraphModal({
                   formatter={(v: number) => fmtNum(v)}
                 />
                 {compData.length > 0 && <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />}
-                <Line type="monotone" dataKey="Current"    stroke="#6366f1" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="Current"    stroke={chartColors[0]} strokeWidth={2} dot={false} />
                 {compData.length > 0 && (
                   <Line type="monotone" dataKey="Comparison" stroke="#a78bfa" strokeWidth={1.5}
                     strokeDasharray="4 2" dot={false} />
@@ -478,7 +480,8 @@ const METRIC_DEFS: MetricDef[] = [
 // Demographics section
 // ─────────────────────────────────────────────────────────────────────────────
 
-function Demographics({ demo }: {
+function Demographics({ demo, chartColors }: {
+  chartColors: string[];
   demo: {
     genderTotal:  Record<string, number>;
     ageGroups:    { age: string; value: number }[];
@@ -487,7 +490,7 @@ function Demographics({ demo }: {
   }
 }) {
   const genderData = Object.entries(demo.genderTotal).map(([name, value]) => ({ name, value }));
-  const genderColors = ["#6366f1", "#ec4899", "#10b981"];
+  const genderColors = [chartColors[0] ?? "#6366f1", chartColors[7] ?? "#ec4899", chartColors[1] ?? "#10b981"];
   const totalGender = genderData.reduce((s, d) => s + d.value, 0);
 
   const maxCity = Math.max(...demo.topCities.map(c => c.value), 1);
@@ -526,7 +529,7 @@ function Demographics({ demo }: {
             <XAxis dataKey="age" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} />
             <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} tickFormatter={fmtNum} />
             <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} formatter={(v: number) => fmtNum(v)} />
-            <Bar dataKey="value" fill="#6366f1" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="value" fill={chartColors[0] ?? "#6366f1"} radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -659,6 +662,9 @@ function CompetitorSection({ vertical }: { vertical: string }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function SocialDashboardPage() {
+  // ── Color palette (user-editable in Settings → Appearance) ─────────────────
+  const { chartColors, brandColors } = useChartColors();
+
   // ── Filter state ────────────────────────────────────────────────────────────
   const [vertical, setVertical] = useState("SY_INDIA");
   const [platform, setPlatform] = useState("instagram");
@@ -1210,7 +1216,7 @@ export default function SocialDashboardPage() {
                 <Users size={14} className="text-violet-500" />
                 <h3 className="text-sm font-semibold text-gray-900">Audience Demographics</h3>
               </div>
-              <Demographics demo={data.demographics} />
+              <Demographics demo={data.demographics} chartColors={chartColors} />
             </Card>
           ) : (
             <Card className="p-5">

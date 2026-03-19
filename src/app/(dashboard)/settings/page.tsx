@@ -7,9 +7,15 @@ import { Card }     from "@/components/ui/Card";
 import {
   CheckCircle2, XCircle, ExternalLink, RefreshCw,
   Plus, Loader2, AlertTriangle, Users, Image, Film,
-  TrendingUp, Globe, Trash2, Youtube, Linkedin,
+  TrendingUp, Globe, Trash2, Youtube, Linkedin, Palette, RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  useChartColors,
+  DEFAULT_CHART_COLORS,
+  DEFAULT_BRAND_COLORS,
+  BRAND_LABELS,
+} from "@/hooks/useChartColors";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -116,7 +122,12 @@ function SetupGuide({ platform }: { platform: "youtube" | "linkedin" }) {
 
 function SettingsInner() {
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState<"integrations" | "accounts" | "sync">("integrations");
+  const [activeTab, setActiveTab] = useState<"integrations" | "accounts" | "sync" | "appearance">("integrations");
+  const {
+    chartColors, brandColors, hydrated,
+    updateChartColor, updateBrandColor,
+    resetAll, resetChartColors, resetBrandColors,
+  } = useChartColors();
 
   // Meta
   const [metaAccounts,  setMetaAccounts]  = useState<MetaAccount[]>([]);
@@ -321,6 +332,7 @@ function SettingsInner() {
           { key: "integrations", label: "Platform Integrations" },
           { key: "accounts",     label: "Vertical Accounts" },
           { key: "sync",         label: `Synced Data${hasMetaAccounts ? ` (${metaAccounts.length})` : ""}` },
+          { key: "appearance",   label: "🎨 Appearance" },
         ].map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
             className={cn(
@@ -880,6 +892,189 @@ function SettingsInner() {
           )}
         </div>
       )}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {/* APPEARANCE TAB                                                    */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {activeTab === "appearance" && (
+        <div className="mt-5 space-y-5">
+
+          {/* ── Competitor chart colors ─────────────────────────────────── */}
+          <Card className="p-5">
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <Palette size={15} className="text-gray-400"/>
+                <h3 className="font-semibold text-gray-900 text-sm">Competitor Chart Colors</h3>
+              </div>
+              <button onClick={resetChartColors}
+                className="inline-flex items-center gap-1.5 text-[11px] text-gray-500 border border-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-50">
+                <RotateCcw size={10}/> Reset to defaults
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-4">
+              These 8 colors are assigned sequentially to competitors in all charts across the Social Dashboard.
+              Color 1 is always the first competitor listed, Color 2 the second, and so on.
+            </p>
+
+            {!hydrated ? (
+              <div className="flex items-center gap-2 text-xs text-gray-400"><Loader2 size={12} className="animate-spin"/> Loading…</div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {chartColors.map((hex, i) => (
+                  <div key={i} className="flex flex-col gap-2">
+                    <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                      Color {i + 1}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      {/* Color preview + native picker */}
+                      <label className="cursor-pointer group relative">
+                        <div
+                          className="w-9 h-9 rounded-xl border-2 border-white shadow-md ring-1 ring-gray-200 group-hover:ring-gray-400 transition-all"
+                          style={{ background: hex }}
+                        />
+                        <input
+                          type="color"
+                          value={hex}
+                          onChange={e => updateChartColor(i, e.target.value)}
+                          className="sr-only"
+                        />
+                      </label>
+                      <div className="flex-1 min-w-0">
+                        <input
+                          type="text"
+                          value={hex}
+                          onChange={e => {
+                            const v = e.target.value;
+                            if (/^#[0-9a-fA-F]{0,6}$/.test(v)) updateChartColor(i, v.length === 7 ? v : hex);
+                          }}
+                          className="w-full border border-gray-200 rounded-lg px-2 py-1 text-[11px] font-mono focus:outline-none focus:ring-2 focus:ring-accent-500"
+                          maxLength={7}
+                        />
+                        <p className="text-[9px] text-gray-400 mt-0.5">
+                          default: {DEFAULT_CHART_COLORS[i]}
+                        </p>
+                      </div>
+                    </div>
+                    {hex !== DEFAULT_CHART_COLORS[i] && (
+                      <button
+                        onClick={() => updateChartColor(i, DEFAULT_CHART_COLORS[i])}
+                        className="text-[9px] text-accent-500 hover:underline text-left">
+                        ↺ reset
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Live preview swatches */}
+            <div className="mt-5 pt-4 border-t border-gray-100">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Preview</p>
+              <div className="flex gap-1.5 flex-wrap">
+                {chartColors.map((hex, i) => (
+                  <div key={i} className="flex flex-col items-center gap-1">
+                    <div className="w-6 h-6 rounded-md shadow-sm" style={{ background: hex }}/>
+                    <span className="text-[8px] text-gray-400">{i + 1}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
+
+          {/* ── Brand / vertical colors ──────────────────────────────────── */}
+          <Card className="p-5">
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <Palette size={15} className="text-gray-400"/>
+                <h3 className="font-semibold text-gray-900 text-sm">Brand Colors</h3>
+              </div>
+              <button onClick={resetBrandColors}
+                className="inline-flex items-center gap-1.5 text-[11px] text-gray-500 border border-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-50">
+                <RotateCcw size={10}/> Reset to defaults
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-4">
+              One color per brand. Used for chart lines, tab highlights, and badges throughout the dashboard.
+            </p>
+
+            {!hydrated ? (
+              <div className="flex items-center gap-2 text-xs text-gray-400"><Loader2 size={12} className="animate-spin"/> Loading…</div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                {Object.entries(BRAND_LABELS).map(([key, label]) => {
+                  const hex     = brandColors[key] ?? DEFAULT_BRAND_COLORS[key];
+                  const isDefault = hex === DEFAULT_BRAND_COLORS[key];
+                  return (
+                    <div key={key} className="flex flex-col gap-2">
+                      <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide truncate">{label}</label>
+                      <div className="flex items-center gap-2">
+                        <label className="cursor-pointer group relative">
+                          <div
+                            className="w-9 h-9 rounded-xl border-2 border-white shadow-md ring-1 ring-gray-200 group-hover:ring-gray-400 transition-all"
+                            style={{ background: hex }}
+                          />
+                          <input
+                            type="color"
+                            value={hex}
+                            onChange={e => updateBrandColor(key, e.target.value)}
+                            className="sr-only"
+                          />
+                        </label>
+                        <div className="flex-1 min-w-0">
+                          <input
+                            type="text"
+                            value={hex}
+                            onChange={e => {
+                              const v = e.target.value;
+                              if (/^#[0-9a-fA-F]{0,6}$/.test(v)) updateBrandColor(key, v.length === 7 ? v : hex);
+                            }}
+                            className="w-full border border-gray-200 rounded-lg px-2 py-1 text-[11px] font-mono focus:outline-none focus:ring-2 focus:ring-accent-500"
+                            maxLength={7}
+                          />
+                          <p className="text-[9px] text-gray-400 mt-0.5">default: {DEFAULT_BRAND_COLORS[key]}</p>
+                        </div>
+                      </div>
+                      {!isDefault && (
+                        <button
+                          onClick={() => updateBrandColor(key, DEFAULT_BRAND_COLORS[key])}
+                          className="text-[9px] text-accent-500 hover:underline text-left">
+                          ↺ reset
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Live preview */}
+            <div className="mt-5 pt-4 border-t border-gray-100">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Preview</p>
+              <div className="flex gap-2 flex-wrap">
+                {Object.entries(BRAND_LABELS).map(([key, label]) => {
+                  const hex = brandColors[key] ?? DEFAULT_BRAND_COLORS[key];
+                  return (
+                    <div key={key} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-white text-[11px] font-medium"
+                      style={{ background: hex }}>
+                      {label}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </Card>
+
+          {/* ── Reset all ──────────────────────────────────────────────── */}
+          <div className="flex items-center justify-between px-1">
+            <p className="text-xs text-gray-400">Changes are saved automatically and apply immediately across the dashboard.</p>
+            <button onClick={resetAll}
+              className="inline-flex items-center gap-1.5 text-[11px] text-red-500 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-50">
+              <RotateCcw size={10}/> Reset all to defaults
+            </button>
+          </div>
+
+        </div>
+      )}
+
     </>
   );
 }
