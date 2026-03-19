@@ -253,11 +253,12 @@ interface GraphModalProps {
   currentTotal:     number | null;
   compTotal:        number | null;
   onClose: () => void;
+  chartColors: string[];
 }
 
 function GraphModal({
   label, dailyKey, currentPeriod, currentDaily,
-  comparisonPeriod, comparisonDaily, currentTotal, compTotal, onClose,
+  comparisonPeriod, comparisonDaily, currentTotal, compTotal, onClose, chartColors,
 }: GraphModalProps) {
   const currData = currentDaily[dailyKey] ?? [];
   const compData = comparisonDaily?.[dailyKey] ?? [];
@@ -1252,6 +1253,7 @@ export default function SocialDashboardPage() {
           currentTotal={data.current.totals[graphMetric.key] as number | null}
           compTotal={(data.comparison?.totals[graphMetric.key] ?? null) as number | null}
           onClose={() => setGraphMetric(null)}
+          chartColors={chartColors}
         />
       )}
 
