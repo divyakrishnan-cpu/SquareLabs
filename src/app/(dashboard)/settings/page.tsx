@@ -8,6 +8,7 @@ import {
   CheckCircle2, XCircle, ExternalLink, RefreshCw,
   Plus, Loader2, AlertTriangle, Users, Image, Film,
   TrendingUp, Globe, Trash2, Youtube, Linkedin, Palette, RotateCcw,
+  Sun, Moon, Monitor,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -16,6 +17,7 @@ import {
   DEFAULT_BRAND_COLORS,
   BRAND_LABELS,
 } from "@/hooks/useChartColors";
+import { useTheme, type Theme } from "@/hooks/useTheme";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -128,6 +130,7 @@ function SettingsInner() {
     updateChartColor, updateBrandColor,
     resetAll, resetChartColors, resetBrandColors,
   } = useChartColors();
+  const { theme: currentTheme, setTheme } = useTheme();
 
   // Meta
   const [metaAccounts,  setMetaAccounts]  = useState<MetaAccount[]>([]);
@@ -897,6 +900,69 @@ function SettingsInner() {
       {/* ══════════════════════════════════════════════════════════════════ */}
       {activeTab === "appearance" && (
         <div className="mt-5 space-y-5">
+
+          {/* ── Theme ────────────────────────────────────────────────────── */}
+          <Card className="p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Monitor size={15} className="text-gray-400 dark:text-gray-500"/>
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Theme</h3>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+              Choose between light and dark mode. Your preference is saved locally and applied immediately.
+            </p>
+            <div className="flex gap-3">
+              {(["light", "dark"] as Theme[]).map(opt => {
+                const isActive = currentTheme === opt;
+                return (
+                  <button
+                    key={opt}
+                    onClick={() => setTheme(opt)}
+                    className={cn(
+                      "flex-1 flex flex-col items-center gap-3 p-4 rounded-xl border-2 transition-all cursor-pointer",
+                      isActive
+                        ? "border-accent-500 bg-accent-50 dark:bg-blue-900/30 dark:border-blue-400"
+                        : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-500"
+                    )}
+                  >
+                    {/* Mini preview */}
+                    <div className={cn(
+                      "w-full h-16 rounded-lg overflow-hidden border flex flex-col",
+                      opt === "dark"
+                        ? "bg-gray-900 border-gray-700"
+                        : "bg-white border-gray-200"
+                    )}>
+                      {/* Fake sidebar strip */}
+                      <div className={cn(
+                        "flex h-full",
+                      )}>
+                        <div className={cn("w-8 h-full shrink-0", opt === "dark" ? "bg-gray-800" : "bg-gray-50")} />
+                        <div className="flex-1 p-2 space-y-1.5">
+                          <div className={cn("h-1.5 rounded-full w-3/4", opt === "dark" ? "bg-gray-700" : "bg-gray-200")} />
+                          <div className={cn("h-1.5 rounded-full w-1/2", opt === "dark" ? "bg-gray-700" : "bg-gray-200")} />
+                          <div className={cn("h-1.5 rounded-full w-5/6", opt === "dark" ? "bg-gray-700" : "bg-gray-200")} />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {opt === "dark"
+                        ? <Moon size={13} className="text-blue-400"/>
+                        : <Sun size={13} className="text-amber-500"/>
+                      }
+                      <span className={cn(
+                        "text-sm font-medium capitalize",
+                        isActive ? "text-accent-600 dark:text-blue-400" : "text-gray-700 dark:text-gray-300"
+                      )}>
+                        {opt}
+                      </span>
+                      {isActive && (
+                        <span className="text-[9px] bg-accent-500 dark:bg-blue-500 text-white px-1.5 py-0.5 rounded-full">Active</span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
 
           {/* ── Competitor chart colors ─────────────────────────────────── */}
           <Card className="p-5">

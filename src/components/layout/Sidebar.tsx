@@ -6,9 +6,10 @@ import { useState } from "react";
 import {
   BarChart2, FileText, MessageSquare, CalendarDays,
   PenTool, Settings, ChevronDown, ChevronRight,
-  Share2, Menu, X, MapPin,
+  Share2, Menu, X, MapPin, Sun, Moon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/hooks/useTheme";
 
 const NAV = [
   {
@@ -31,6 +32,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [openGroups, setOpenGroups] = useState<string[]>(["Social"]);
+  const { theme, toggle } = useTheme();
 
   function toggleGroup(label: string) {
     setOpenGroups(prev =>
@@ -45,20 +47,25 @@ export function Sidebar() {
         onClick={() => setCollapsed(true)} />
 
       <aside className={cn(
-        "fixed top-0 left-0 h-full bg-white border-r border-gray-200 flex flex-col z-30 transition-all duration-200",
+        "fixed top-0 left-0 h-full flex flex-col z-30 transition-all duration-200",
+        "bg-white border-r border-gray-200",
+        "dark:bg-gray-900 dark:border-gray-700",
         collapsed ? "w-16" : "w-56"
       )}>
         {/* Logo */}
-        <div className="flex items-center gap-2 px-4 h-14 border-b border-gray-100 shrink-0">
+        <div className={cn(
+          "flex items-center gap-2 px-4 h-14 shrink-0 border-b",
+          "border-gray-100 dark:border-gray-700"
+        )}>
           <div className="w-7 h-7 bg-brand-500 rounded-lg flex items-center justify-center shrink-0">
             <span className="text-white font-bold text-xs">SY</span>
           </div>
           {!collapsed && (
-            <span className="font-semibold text-gray-900 text-sm truncate">SquareLabs</span>
+            <span className="font-semibold text-gray-900 dark:text-gray-100 text-sm truncate">SquareLabs</span>
           )}
           <button
             onClick={() => setCollapsed(c => !c)}
-            className="ml-auto text-gray-400 hover:text-gray-600 shrink-0"
+            className="ml-auto text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 shrink-0"
           >
             {collapsed ? <Menu size={16} /> : <X size={16} />}
           </button>
@@ -75,7 +82,8 @@ export function Sidebar() {
                   onClick={() => toggleGroup(group.label)}
                   className={cn(
                     "sidebar-item w-full",
-                    group.children.some(c => pathname.startsWith(c.href)) && "text-accent-600 bg-accent-50"
+                    group.children.some(c => pathname.startsWith(c.href)) &&
+                      "text-accent-600 bg-accent-50 dark:text-blue-400 dark:bg-blue-900/40"
                   )}
                 >
                   <GroupIcon size={16} className="shrink-0" />
@@ -88,10 +96,12 @@ export function Sidebar() {
                 </button>
 
                 {isOpen && !collapsed && (
-                  <div className="ml-3 mt-0.5 space-y-0.5 border-l border-gray-100 pl-2">
+                  <div className={cn(
+                    "ml-3 mt-0.5 space-y-0.5 border-l pl-2",
+                    "border-gray-100 dark:border-gray-700"
+                  )}>
                     {group.children.map(item => {
                       const Icon = item.icon;
-                      // Exact match for /social/orm so GMB sub-page doesn't also highlight it
                       const active = item.href === "/social/orm"
                         ? pathname === "/social/orm"
                         : pathname === item.href || pathname.startsWith(item.href + "/");
@@ -112,7 +122,10 @@ export function Sidebar() {
         </nav>
 
         {/* Bottom */}
-        <div className="border-t border-gray-100 px-2 py-2 space-y-0.5">
+        <div className={cn(
+          "border-t px-2 py-2 space-y-0.5",
+          "border-gray-100 dark:border-gray-700"
+        )}>
           {BOTTOM_NAV.map(item => {
             const Icon = item.icon;
             const active = pathname === item.href;
@@ -126,6 +139,21 @@ export function Sidebar() {
             );
           })}
 
+          {/* Dark / Light toggle */}
+          <button
+            onClick={toggle}
+            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            className="sidebar-item w-full"
+          >
+            {theme === "dark"
+              ? <Sun size={16} className="shrink-0 text-amber-400" />
+              : <Moon size={16} className="shrink-0" />
+            }
+            {!collapsed && (
+              <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+            )}
+          </button>
+
           {/* User */}
           {!collapsed && (
             <div className="flex items-center gap-2 px-2 py-2 mt-1">
@@ -133,8 +161,8 @@ export function Sidebar() {
                 <span className="text-brand-700 font-semibold text-xs">DK</span>
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-medium text-gray-900 truncate">Divya Krishnan</p>
-                <p className="text-[10px] text-gray-500 truncate">Head of Marketing</p>
+                <p className="text-xs font-medium text-gray-900 dark:text-gray-100 truncate">Divya Krishnan</p>
+                <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">Head of Marketing</p>
               </div>
             </div>
           )}
