@@ -4,8 +4,8 @@ generator client {
 
 datasource db {
   provider  = "postgresql"
-  url       = env("POSTGRES_PRISMA_URL")
-  directUrl = env("POSTGRES_URL_NON_POOLING")
+  url       = env("DATABASE_URL")       // Supabase pooled (Transaction mode, port 6543)
+  directUrl = env("DIRECT_URL")         // Supabase direct (port 5432, used by migrations)
 }
 
 // ── Auth ───────────────────────────────────────────────────────────────────
