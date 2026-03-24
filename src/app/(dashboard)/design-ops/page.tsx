@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   LayoutGrid, List, BarChart2, Plus, RefreshCw, Loader2,
   ChevronDown, AlertTriangle, Clock, CheckCircle2,
   Filter, Search, X, FileVideo, Image as ImageIcon,
   Users, TrendingUp, Circle, ArrowRight, Edit2, MessageSquare,
-  Send, Trash2,
+  Send, Trash2, Upload, CalendarDays, FileSpreadsheet,
+  Download, Eye, ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -119,12 +120,13 @@ function avatarColor(name: string): string {
 // ══════════════════════════════════════════════════════════════════════════
 
 export default function DesignOpsPage() {
-  const [view, setView]           = useState<"board" | "list" | "analytics" | "mytasks">("board");
-  const [requests, setRequests]   = useState<DesignRequest[]>([]);
-  const [designers, setDesigners] = useState<Designer[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [selected, setSelected]   = useState<DesignRequest | null>(null);
-  const [showForm, setShowForm]   = useState(false);
+  const [view, setView]               = useState<"board" | "list" | "analytics" | "mytasks" | "calendar">("board");
+  const [requests, setRequests]       = useState<DesignRequest[]>([]);
+  const [designers, setDesigners]     = useState<Designer[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [selected, setSelected]       = useState<DesignRequest | null>(null);
+  const [showForm, setShowForm]       = useState(false);
+  const [showUpload, setShowUpload]   = useState(false);
 
   // Filters
   const [filterType,    setFilterType]    = useState("");
@@ -195,35 +197,48 @@ export default function DesignOpsPage() {
       {/* Header */}
       <div className="flex items-center gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Design Ops Tracker</h1>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Design Ops</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            End-to-end design request tracking with TAT analytics
+            One place for Social + Design team — calendar, requests, TAT tracking
           </p>
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
           {/* View toggle */}
           <div className="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5 gap-0.5">
-            {(["board", "list", "analytics", "mytasks"] as const).map(v => (
+            {([
+              { key: "calendar",  label: "Calendar",  icon: <CalendarDays size={12} className="inline mr-1"/> },
+              { key: "board",     label: "Board",     icon: <LayoutGrid   size={12} className="inline mr-1"/> },
+              { key: "list",      label: "List",      icon: <List         size={12} className="inline mr-1"/> },
+              { key: "analytics", label: "Analytics", icon: <BarChart2    size={12} className="inline mr-1"/> },
+              { key: "mytasks",   label: "My Work",   icon: <Users        size={12} className="inline mr-1"/> },
+            ] as const).map(({ key: v, label, icon }) => (
               <button key={v} onClick={() => setView(v)}
                 className={cn("px-3 py-1.5 rounded-md text-xs font-semibold transition-all",
                   view === v
                     ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
                     : "text-gray-500 hover:text-gray-700 dark:text-gray-400"
                 )}>
-                {v === "board"    ? <><LayoutGrid size={12} className="inline mr-1"/>Board</> :
-                 v === "list"     ? <><List size={12} className="inline mr-1"/>List</> :
-                 v === "analytics"? <><BarChart2 size={12} className="inline mr-1"/>Analytics</> :
-                 <><Users size={12} className="inline mr-1"/>My Work</>}
+                {icon}{label}
               </button>
             ))}
           </div>
-          <button onClick={load} className="p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-500">
+
+          <button onClick={load}
+            className="p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-500">
             <RefreshCw size={14} className={loading ? "animate-spin" : ""}/>
           </button>
-          <button onClick={() => setShowForm(true)}
+
+          {/* Primary: Upload Calendar */}
+          <button onClick={() => setShowUpload(true)}
             className="flex items-center gap-1.5 bg-blue-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-blue-700">
-            <Plus size={14}/> New Request
+            <Upload size={14}/> Upload Calendar
+          </button>
+
+          {/* Secondary: Single request */}
+          <button onClick={() => setShowForm(true)}
+            className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
+            <Plus size={14}/> Add Request
           </button>
         </div>
       </div>
@@ -390,6 +405,11 @@ export default function DesignOpsPage() {
         </div>
       )}
 
+      {/* ── CALENDAR VIEW ─────────────────────────────────────────────── */}
+      {view === "calendar" && (
+        <CalendarHubView requests={requests} onUpload={() => setShowUpload(true)} />
+      )}
+
       {/* ── ANALYTICS VIEW ────────────────────────────────────────────── */}
       {view === "analytics" && (
         <AnalyticsView />
@@ -417,6 +437,15 @@ export default function DesignOpsPage() {
         <NewRequestModal
           onClose={() => setShowForm(false)}
           onCreated={() => { setShowForm(false); load(); }}
+        />
+      )}
+
+      {/* Calendar upload */}
+      {showUpload && (
+        <CalendarUploadModal
+          month={new Date().toLocaleString("en-IN", { month: "long", year: "numeric" })}
+          onClose={() => setShowUpload(false)}
+          onSuccess={(_n: number) => { setShowUpload(false); load(); setView("board"); }}
         />
       )}
     </div>
@@ -1198,6 +1227,456 @@ function MyWorkView({
             </div>
           }
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CALENDAR HUB VIEW
+// ─────────────────────────────────────────────────────────────────────────────
+
+const STAGE_ORDER: Status[] = ["NEW","ASSIGNED","IN_PROGRESS","REVIEW","DELIVERED"];
+const STAGE_LABELS: Record<string, string> = {
+  NEW: "New", ASSIGNED: "Assigned", IN_PROGRESS: "In Progress", REVIEW: "Review", DELIVERED: "Done",
+};
+
+function CalendarHubView({ requests, onUpload }: { requests: DesignRequest[]; onUpload: () => void }) {
+  const now   = new Date();
+  const month = now.toLocaleString("en-IN", { month: "long", year: "numeric" });
+
+  // Stage pipeline counts
+  const stageCounts = STAGE_ORDER.map(s => ({
+    stage: s,
+    label: STAGE_LABELS[s],
+    count: requests.filter(r => r.status === s).length,
+  }));
+  const total = requests.length || 1;
+
+  // Overdue
+  const overdue = requests.filter(r =>
+    r.dueDate && new Date(r.dueDate) < now && r.status !== "DELIVERED" && r.status !== "CANCELLED"
+  );
+
+  // Non-social (not requested by social team) — design team requests
+  const designRequests = requests.filter(r => r.requestingTeam !== "SOCIAL");
+
+  if (requests.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="text-5xl mb-4">📅</div>
+        <h3 className="text-lg font-bold text-gray-700 dark:text-gray-300 mb-2">No requests for this period</h3>
+        <p className="text-sm text-gray-400 dark:text-gray-500 mb-6 max-w-sm">
+          Upload your monthly content calendar to auto-create requests for the social & design team.
+        </p>
+        <button onClick={onUpload}
+          className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl font-semibold text-sm hover:bg-blue-700">
+          <Upload size={15}/> Upload Calendar
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Month header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-bold text-gray-800 dark:text-gray-200">{month} — Content Pipeline</h2>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{requests.length} total requests</p>
+        </div>
+        <button onClick={onUpload}
+          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-xl font-semibold text-sm hover:bg-blue-700">
+          <Upload size={14}/> Upload Calendar
+        </button>
+      </div>
+
+      {/* Stage pipeline */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+        <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">Stage Pipeline</p>
+        <div className="grid grid-cols-5 gap-3">
+          {stageCounts.map(({ stage, label, count }) => {
+            const pct = Math.round((count / total) * 100);
+            const colors: Record<string, string> = {
+              NEW: "bg-gray-400", ASSIGNED: "bg-blue-400", IN_PROGRESS: "bg-yellow-400",
+              REVIEW: "bg-purple-400", DELIVERED: "bg-green-500",
+            };
+            return (
+              <div key={stage} className="flex flex-col items-center gap-2">
+                <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2">
+                  <div className={cn("h-2 rounded-full", colors[stage])} style={{ width: `${pct}%` }}/>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-gray-800 dark:text-gray-200">{count}</p>
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400">{label}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-6">
+        {/* Overdue */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-800 p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-red-500 text-sm">⚠️</span>
+            <p className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wide">
+              Overdue ({overdue.length})
+            </p>
+          </div>
+          {overdue.length === 0
+            ? <p className="text-xs text-gray-400 italic">All on track! 🎉</p>
+            : <div className="space-y-2">
+              {overdue.slice(0, 6).map(r => (
+                <div key={r.id} className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 truncate max-w-[180px]">{r.title}</p>
+                    <p className="text-[10px] text-gray-400">{r.refId} · {STAGE_LABELS[r.status]}</p>
+                  </div>
+                  <span className="text-[10px] text-red-500 font-semibold whitespace-nowrap">
+                    {r.dueDate ? new Date(r.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : ""}
+                  </span>
+                </div>
+              ))}
+              {overdue.length > 6 && <p className="text-[10px] text-gray-400">+{overdue.length - 6} more</p>}
+            </div>
+          }
+        </div>
+
+        {/* Design team requests */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-sm">🎨</span>
+            <p className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+              Design Requests ({designRequests.length})
+            </p>
+          </div>
+          {designRequests.length === 0
+            ? <p className="text-xs text-gray-400 italic">No design team requests.</p>
+            : <div className="space-y-2">
+              {designRequests.slice(0, 6).map(r => {
+                const tc = TYPE_CONFIG[r.type] || TYPE_CONFIG.OTHER;
+                return (
+                  <div key={r.id} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{tc.icon}</span>
+                      <div>
+                        <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 truncate max-w-[160px]">{r.title}</p>
+                        <p className="text-[10px] text-gray-400">{r.refId}</p>
+                      </div>
+                    </div>
+                    <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", STATUS_CONFIG[r.status]?.bg ?? "bg-gray-100", STATUS_CONFIG[r.status]?.color ?? "text-gray-700")}>
+                      {STAGE_LABELS[r.status]}
+                    </span>
+                  </div>
+                );
+              })}
+              {designRequests.length > 6 && <p className="text-[10px] text-gray-400">+{designRequests.length - 6} more</p>}
+            </div>
+          }
+        </div>
+      </div>
+
+      {/* Type breakdown */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+        <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">By Request Type</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {Object.entries(TYPE_CONFIG).map(([type, cfg]) => {
+            const cnt = requests.filter(r => r.type === type).length;
+            if (!cnt) return null;
+            const TYPE_COLORS: Record<string, { bg: string; color: string }> = {
+              VIDEO_EDIT:       { bg: "bg-blue-50 dark:bg-blue-900/20",   color: "text-blue-600 dark:text-blue-400" },
+              VIDEO_SHOOT:      { bg: "bg-indigo-50 dark:bg-indigo-900/20", color: "text-indigo-600 dark:text-indigo-400" },
+              GRAPHIC_SOCIAL:   { bg: "bg-pink-50 dark:bg-pink-900/20",   color: "text-pink-600 dark:text-pink-400" },
+              GRAPHIC_CAMPAIGN: { bg: "bg-orange-50 dark:bg-orange-900/20", color: "text-orange-600 dark:text-orange-400" },
+              OTHER:            { bg: "bg-gray-50 dark:bg-gray-700/50",   color: "text-gray-600 dark:text-gray-400" },
+            };
+            const tc = TYPE_COLORS[type] || TYPE_COLORS.OTHER;
+            return (
+              <div key={type} className={cn("rounded-xl p-4 flex flex-col gap-1", tc.bg)}>
+                <span className="text-xl">{cfg.icon}</span>
+                <p className={cn("text-2xl font-bold", tc.color)}>{cnt}</p>
+                <p className="text-[11px] text-gray-600 dark:text-gray-400 font-medium">{cfg.label}</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CSV UPLOAD MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CSV_TEMPLATE = [
+  "title,type,requestingTeam,priority,dueDate,brief,referenceLinks",
+  "Instagram Reel - Product Launch,VIDEO_EDIT,SOCIAL,HIGH,2026-04-10,Short 30s reel for product launch campaign,",
+  "YouTube Long-Form Edit,VIDEO_EDIT,SOCIAL,MEDIUM,2026-04-15,Edit 10-min YouTube video from raw shoot footage,",
+  "Campaign Banner Set,GRAPHIC_CAMPAIGN,PAID_CAMPAIGN,HIGH,2026-04-08,Static banners 1200x628 for Google Ads,",
+].join("\n");
+
+type ParsedRow = {
+  title: string; type: string; requestingTeam: string;
+  priority: string; dueDate: string; brief: string; referenceLinks: string;
+  _valid: boolean; _error?: string;
+};
+
+function parseCSV(text: string): ParsedRow[] {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return [];
+
+  // Flexible column matching
+  const headers = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/[^a-z]/g, ""));
+  const col = (name: string) => {
+    const patterns: Record<string, string[]> = {
+      title:          ["title","name","task","subject"],
+      type:           ["type","requesttype","kind"],
+      requestingTeam: ["requestingteam","team","department","dept","from"],
+      priority:       ["priority","prio","urgency"],
+      dueDate:        ["duedate","due","deadline","date"],
+      brief:          ["brief","description","details","notes"],
+      referenceLinks: ["referencelinks","links","ref","references","url"],
+    };
+    for (const alias of (patterns[name] || [name])) {
+      const idx = headers.findIndex(h => h.includes(alias) || alias.includes(h));
+      if (idx !== -1) return idx;
+    }
+    return -1;
+  };
+
+  const idx = {
+    title: col("title"), type: col("type"), requestingTeam: col("requestingTeam"),
+    priority: col("priority"), dueDate: col("dueDate"), brief: col("brief"), referenceLinks: col("referenceLinks"),
+  };
+
+  return lines.slice(1).map(line => {
+    const cells = line.split(",").map(c => c.trim().replace(/^["']|["']$/g, ""));
+    const get   = (k: keyof typeof idx) => (idx[k] >= 0 ? cells[idx[k]] || "" : "");
+    const title = get("title");
+    const type  = get("type").toUpperCase();
+    const team  = get("requestingTeam").toUpperCase();
+
+    const VALID_T = ["VIDEO_EDIT","VIDEO_SHOOT","GRAPHIC_SOCIAL","GRAPHIC_CAMPAIGN","OTHER"];
+    const valid   = !!title && VALID_T.includes(type);
+    return {
+      title, type, requestingTeam: team || "OTHER",
+      priority:       get("priority") || "MEDIUM",
+      dueDate:        get("dueDate"),
+      brief:          get("brief"),
+      referenceLinks: get("referenceLinks"),
+      _valid:         valid,
+      _error:         !title ? "Missing title" : !VALID_T.includes(type) ? `Unknown type: ${type || "(blank)"}` : undefined,
+    };
+  }).filter(r => r.title || r.type);
+}
+
+function CalendarUploadModal({ month, onClose, onSuccess }: { month: string; onClose: () => void; onSuccess: (n: number) => void }) {
+  const [step, setStep]       = useState<"upload"|"preview"|"done">("upload");
+  const [dragging, setDragging] = useState(false);
+  const [rows, setRows]       = useState<ParsedRow[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult]   = useState<{created:number;skipped:number}>({created:0,skipped:0});
+  const fileRef               = useRef<HTMLInputElement>(null);
+
+  function handleFile(file: File) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const parsed = parseCSV(e.target?.result as string);
+      setRows(parsed);
+      setStep("preview");
+    };
+    reader.readAsText(file);
+  }
+
+  async function submit() {
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/design-ops/requests/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month, requests: rows.filter(r => r._valid) }),
+      });
+      const data = await res.json();
+      setResult({ created: data.created, skipped: data.skipped });
+      setStep("done");
+      onSuccess(data.created);
+    } catch {
+      alert("Upload failed. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function downloadTemplate() {
+    const blob = new Blob([CSV_TEMPLATE], { type: "text/csv" });
+    const a    = document.createElement("a");
+    a.href     = URL.createObjectURL(blob);
+    a.download = "calendar_upload_template.csv";
+    a.click();
+  }
+
+  const validCount   = rows.filter(r => r._valid).length;
+  const invalidCount = rows.filter(r => !r._valid).length;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <div>
+            <h2 className="font-bold text-gray-800 dark:text-gray-200 text-lg">📅 Upload Content Calendar</h2>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+              {step === "upload" ? "Drop your CSV to auto-create design requests"
+               : step === "preview" ? `Preview — ${validCount} valid, ${invalidCount} will be skipped`
+               : "Upload complete!"}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+            <X size={18}/>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {step === "upload" && (
+            <div className="space-y-5">
+              {/* Drop zone */}
+              <div
+                onDragOver={e => { e.preventDefault(); setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+                onClick={() => fileRef.current?.click()}
+                className={cn(
+                  "border-2 border-dashed rounded-2xl p-12 flex flex-col items-center justify-center cursor-pointer transition-colors",
+                  dragging ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-gray-300 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-500"
+                )}>
+                <FileSpreadsheet size={36} className="text-gray-400 mb-3"/>
+                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Drag & drop your CSV here</p>
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">or click to browse</p>
+                <input ref={fileRef} type="file" accept=".csv" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}/>
+              </div>
+
+              {/* Template */}
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">📋 Required CSV columns</p>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                      <span className="font-semibold text-red-500">title*</span>,{" "}
+                      <span className="font-semibold text-red-500">type*</span>,{" "}
+                      requestingTeam, priority, dueDate, brief, referenceLinks
+                    </p>
+                    <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1.5">
+                      Types: VIDEO_EDIT · VIDEO_SHOOT · GRAPHIC_SOCIAL · GRAPHIC_CAMPAIGN · OTHER
+                    </p>
+                  </div>
+                  <button onClick={downloadTemplate}
+                    className="flex items-center gap-1.5 text-xs bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 whitespace-nowrap font-medium">
+                    <Download size={12}/> Template
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === "preview" && (
+            <div className="space-y-4">
+              {/* Summary */}
+              <div className="flex gap-3">
+                <div className="flex-1 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-3 text-center">
+                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">{validCount}</p>
+                  <p className="text-xs text-green-700 dark:text-green-500">Will be created</p>
+                </div>
+                {invalidCount > 0 && (
+                  <div className="flex-1 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-bold text-red-500">{invalidCount}</p>
+                    <p className="text-xs text-red-600 dark:text-red-400">Will be skipped</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Table */}
+              <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400">
+                      <th className="px-3 py-2 text-left font-semibold">Status</th>
+                      <th className="px-3 py-2 text-left font-semibold">Title</th>
+                      <th className="px-3 py-2 text-left font-semibold">Type</th>
+                      <th className="px-3 py-2 text-left font-semibold">Team</th>
+                      <th className="px-3 py-2 text-left font-semibold">Priority</th>
+                      <th className="px-3 py-2 text-left font-semibold">Due Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r, i) => (
+                      <tr key={i} className={cn(
+                        "border-t border-gray-100 dark:border-gray-700",
+                        r._valid ? "" : "bg-red-50/50 dark:bg-red-900/10"
+                      )}>
+                        <td className="px-3 py-2">
+                          {r._valid
+                            ? <span className="text-green-600 dark:text-green-400 font-bold">✓</span>
+                            : <span className="text-red-500 font-bold" title={r._error}>✗</span>}
+                        </td>
+                        <td className="px-3 py-2 font-medium text-gray-700 dark:text-gray-300 max-w-[180px] truncate">{r.title || <span className="text-red-400 italic">missing</span>}</td>
+                        <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{r.type || <span className="text-red-400 italic">missing</span>}</td>
+                        <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{r.requestingTeam}</td>
+                        <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{r.priority}</td>
+                        <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{r.dueDate || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Re-upload link */}
+              <button onClick={() => setStep("upload")} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                <Upload size={11}/> Upload a different file
+              </button>
+            </div>
+          )}
+
+          {step === "done" && (
+            <div className="flex flex-col items-center justify-center py-10 text-center gap-4">
+              <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-3xl">🎉</div>
+              <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200">
+                {result.created} request{result.created !== 1 ? "s" : ""} created!
+              </h3>
+              {result.skipped > 0 && (
+                <p className="text-sm text-gray-500 dark:text-gray-400">{result.skipped} row{result.skipped !== 1 ? "s" : ""} were skipped due to missing/invalid data.</p>
+              )}
+              <p className="text-xs text-gray-400 dark:text-gray-500">Head to the Board or List view to manage and assign them.</p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        {step !== "done" && (
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+            <button onClick={onClose} className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 px-4 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 font-medium">
+              Cancel
+            </button>
+            {step === "preview" && (
+              <button onClick={submit} disabled={submitting || validCount === 0}
+                className="flex items-center gap-2 bg-blue-600 text-white text-sm font-semibold px-5 py-2 rounded-xl hover:bg-blue-700 disabled:opacity-50">
+                {submitting ? <Loader2 size={14} className="animate-spin"/> : <Upload size={14}/>}
+                Create {validCount} Request{validCount !== 1 ? "s" : ""}
+              </button>
+            )}
+          </div>
+        )}
+        {step === "done" && (
+          <div className="flex justify-center px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+            <button onClick={onClose} className="bg-blue-600 text-white text-sm font-semibold px-6 py-2.5 rounded-xl hover:bg-blue-700">
+              View Requests
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

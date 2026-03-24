@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   if (stored.length === 0) return NextResponse.json({ error: "no pages stored yet — connect Meta first" });
 
   // Get the user token from the first row that has one
-  const userToken = stored.find(p => p.userAccessToken)?.userAccessToken ?? null;
+  const userToken = stored.find((p: any) => p.userAccessToken)?.userAccessToken ?? null;
 
   // ── 1. Debug the USER token (if we have one) ─────────────────────────────
   let userTokenInfo: object | null = null;
