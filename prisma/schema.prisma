@@ -554,6 +554,19 @@ enum RequestingTeam {
   MARKETING
   HR
   OTHER
+  // New teams
+  MANAGEMENT
+  ADMIN_TEAM
+  BUSINESS_UM
+  BUSINESS_AZURO
+  BUSINESS_PROPVR
+  BUSINESS_IPM
+  BUSINESS_NRI
+  BUSINESS_INDIA_SALES
+  PERFORMANCE_MARKETING
+  TECH
+  CONTENT
+  SEO
 }
 
 model DesignRequest {
@@ -563,13 +576,15 @@ model DesignRequest {
   brief           String               @db.Text
   type            DesignRequestType
   requestingTeam  RequestingTeam
+  requesterName   String?              // Free-text name of person requesting
+  subTeam         String?              // e.g. "UM", "Azuro" for BUSINESS group
   priority        TaskPriority         @default(MEDIUM)
   status          DesignRequestStatus  @default(NEW)
   dueDate         DateTime?
   referenceLinks  String?              @db.Text // comma-separated URLs
 
   // People
-  requestedById   String?              // User who submitted
+  requestedById   String?              // User who submitted (if logged in)
   assignedToId    String?              // Designer assigned
 
   // TAT timestamps

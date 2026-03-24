@@ -60,7 +60,7 @@ export async function POST(req: Request) {
   if (!session?.user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
 
   const body = await req.json();
-  const { title, brief, type, requestingTeam, priority, dueDate, referenceLinks } = body;
+  const { title, brief, type, requestingTeam, requesterName, subTeam, priority, dueDate, referenceLinks } = body;
 
   if (!title || !brief || !type || !requestingTeam) {
     return NextResponse.json({ error: "title, brief, type and requestingTeam are required" }, { status: 400 });
@@ -75,6 +75,8 @@ export async function POST(req: Request) {
       brief,
       type,
       requestingTeam,
+      requesterName:  requesterName ?? null,
+      subTeam:        subTeam ?? null,
       priority:       priority   ?? "MEDIUM",
       dueDate:        dueDate    ? new Date(dueDate) : null,
       referenceLinks: referenceLinks ?? null,
