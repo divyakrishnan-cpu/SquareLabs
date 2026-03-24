@@ -32,6 +32,8 @@ model User {
   metaIntegrations     MetaIntegration[]
   youtubeIntegrations  YoutubeIntegration[]
   linkedinIntegrations LinkedinIntegration[]
+  designRequestsMade   DesignRequest[]       @relation("RequestedByUser")
+  designRequestsOwned  DesignRequest[]       @relation("AssignedDesigner")
 
   @@map("users")
 }
@@ -509,6 +511,87 @@ model LinkedinIntegration {
 
   @@unique([userId, organizationId])
   @@map("linkedin_integrations")
+}
+
+// ── DesignOps — Design Request Tracker ────────────────────────────────────
+
+enum DesignRequestType {
+  VIDEO_EDIT          // Edit existing raw footage
+  VIDEO_SHOOT         // Full production shoot + edit
+  GRAPHIC_SOCIAL      // Social media graphics (posts, stories, covers)
+  GRAPHIC_CAMPAIGN    // Paid campaign / ad / email graphics
+  OTHER
+}
+
+enum DesignRequestStatus {
+  NEW          // Submitted, awaiting assignment
+  ASSIGNED     // Assigned to a designer, not yet started
+  IN_PROGRESS  // Designer actively working
+  REVIEW       // Submitted for review by requester/lead
+  DELIVERED    // Approved and delivered ✅
+  CANCELLED
+}
+
+enum RequestingTeam {
+  SOCIAL
+  PAID_CAMPAIGN
+  MARKETING
+  HR
+  OTHER
+}
+
+model DesignRequest {
+  id              String               @id @default(cuid())
+  refId           String               @unique // human-readable e.g. REQ-001
+  title           String
+  brief           String               @db.Text
+  type            DesignRequestType
+  requestingTeam  RequestingTeam
+  priority        TaskPriority         @default(MEDIUM)
+  status          DesignRequestStatus  @default(NEW)
+  dueDate         DateTime?
+  referenceLinks  String?              @db.Text // comma-separated URLs
+
+  // People
+  requestedById   String?              // User who submitted
+  assignedToId    String?              // Designer assigned
+
+  // TAT timestamps
+  submittedAt     DateTime             @default(now())
+  assignedAt      DateTime?
+  startedAt       DateTime?
+  reviewAt        DateTime?
+  deliveredAt     DateTime?
+
+  // TAT in hours (computed on delivery)
+  tatHours        Float?
+
+  // Revision tracking
+  revisionCount   Int                  @default(0)
+  revisionNote    String?              @db.Text
+
+  // Relations
+  requestedBy     User?                @relation("RequestedByUser", fields: [requestedById], references: [id])
+  assignedTo      User?                @relation("AssignedDesigner", fields: [assignedToId], references: [id])
+  notes           DesignRequestNote[]
+
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@map("design_requests")
+}
+
+model DesignRequestNote {
+  id        String        @id @default(cuid())
+  requestId String
+  authorId  String?
+  body      String        @db.Text
+  isSystem  Boolean       @default(false) // true = auto-generated status-change log
+  createdAt DateTime      @default(now())
+
+  request   DesignRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@map("design_request_notes")
 }
 
 // ── SM-05: Publish Notifications ──────────────────────────────────────────

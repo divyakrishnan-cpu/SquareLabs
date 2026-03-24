@@ -6,7 +6,7 @@ import { useState } from "react";
 import {
   BarChart2, FileText, MessageSquare, CalendarDays,
   PenTool, Settings, ChevronDown, ChevronRight,
-  Share2, Menu, X, MapPin, Sun, Moon,
+  Share2, Menu, X, MapPin, Sun, Moon, Clapperboard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/hooks/useTheme";
@@ -22,6 +22,13 @@ const NAV = [
       { label: "GMB Ratings",        href: "/social/orm/gmb",   icon: MapPin },
     ],
   },
+  {
+    label: "Design Ops",
+    icon: Clapperboard,
+    children: [
+      { label: "Request Tracker",    href: "/design-ops",       icon: Clapperboard },
+    ],
+  },
 ];
 
 const BOTTOM_NAV = [
@@ -31,7 +38,7 @@ const BOTTOM_NAV = [
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const [openGroups, setOpenGroups] = useState<string[]>(["Social"]);
+  const [openGroups, setOpenGroups] = useState<string[]>(["Social", "Design Ops"]);
   const { theme, toggle } = useTheme();
 
   function toggleGroup(label: string) {
