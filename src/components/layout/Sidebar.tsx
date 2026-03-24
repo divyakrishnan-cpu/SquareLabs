@@ -3,42 +3,51 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { useSession } from "next-auth/react";
 import {
   BarChart2, FileText, MessageSquare, CalendarDays,
   PenTool, Settings, ChevronDown, ChevronRight,
-  Share2, Menu, X, MapPin, Sun, Moon, Clapperboard,
+  Share2, Menu, X, MapPin, Sun, Moon, Clapperboard, Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/hooks/useTheme";
+import { canAccess, type AppSection, type SessionUser } from "@/lib/permissions";
 
-const NAV = [
+// ── Nav definition (each item tagged with required section) ─────────────────
+
+type NavItem   = { label: string; href: string; icon: any; section?: AppSection };
+type NavGroup  = { label: string; icon: any; section?: AppSection; children: NavItem[] };
+
+const NAV: NavGroup[] = [
   {
-    label: "Social",
-    icon: Share2,
+    label: "Social", icon: Share2, section: "SOCIAL",
     children: [
-      { label: "Dashboard",          href: "/social/dashboard", icon: BarChart2 },
-      { label: "Content Calendar",   href: "/social/calendar",  icon: CalendarDays },
-      { label: "ORM — Comments",     href: "/social/orm",       icon: MessageSquare },
-      { label: "GMB Ratings",        href: "/social/orm/gmb",   icon: MapPin },
+      { label: "Dashboard",        href: "/social/dashboard", icon: BarChart2,    section: "SOCIAL" },
+      { label: "Content Calendar", href: "/social/calendar",  icon: CalendarDays, section: "SOCIAL" },
+      { label: "ORM — Comments",   href: "/social/orm",       icon: MessageSquare,section: "SOCIAL" },
+      { label: "GMB Ratings",      href: "/social/orm/gmb",   icon: MapPin,       section: "GMB" },
     ],
   },
   {
-    label: "Design Ops",
-    icon: Clapperboard,
+    label: "Design Ops", icon: Clapperboard, section: "DESIGN_OPS",
     children: [
-      { label: "Request Tracker",    href: "/design-ops",       icon: Clapperboard },
+      { label: "Request Tracker",  href: "/design-ops",       icon: Clapperboard, section: "DESIGN_OPS" },
     ],
   },
 ];
 
-const BOTTOM_NAV = [
-  { label: "Settings", href: "/settings", icon: Settings },
+const BOTTOM_NAV: NavItem[] = [
+  { label: "Team Hub", href: "/team-hub", icon: Users,    section: "TEAM_HUB" },
+  { label: "Settings", href: "/settings", icon: Settings, section: "SETTINGS" },
 ];
 
 export function Sidebar() {
-  const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
-  const [openGroups, setOpenGroups] = useState<string[]>(["Social", "Design Ops"]);
+  const pathname   = usePathname();
+  const { data: session } = useSession();
+  const sessionUser = session?.user as SessionUser | undefined;
+
+  const [collapsed,   setCollapsed]   = useState(false);
+  const [openGroups,  setOpenGroups]  = useState<string[]>(["Social", "Design Ops"]);
   const { theme, toggle } = useTheme();
 
   function toggleGroup(label: string) {
@@ -46,6 +55,21 @@ export function Sidebar() {
       prev.includes(label) ? prev.filter(g => g !== label) : [...prev, label]
     );
   }
+
+  // Filter groups/items the user can see
+  const visibleNav = NAV
+    .filter(g => !g.section || canAccess(sessionUser, g.section))
+    .map(g => ({
+      ...g,
+      children: g.children.filter(c => !c.section || canAccess(sessionUser, c.section)),
+    }))
+    .filter(g => g.children.length > 0);
+
+  const visibleBottom = BOTTOM_NAV.filter(i => !i.section || canAccess(sessionUser, i.section));
+
+  const userName  = sessionUser?.name  ?? "User";
+  const userEmail = sessionUser?.email ?? "";
+  const initials  = userName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
 
   return (
     <>
@@ -80,8 +104,8 @@ export function Sidebar() {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-          {NAV.map(group => {
-            const isOpen = openGroups.includes(group.label);
+          {visibleNav.map(group => {
+            const isOpen    = openGroups.includes(group.label);
             const GroupIcon = group.icon;
             return (
               <div key={group.label}>
@@ -108,7 +132,7 @@ export function Sidebar() {
                     "border-gray-100 dark:border-gray-700"
                   )}>
                     {group.children.map(item => {
-                      const Icon = item.icon;
+                      const Icon   = item.icon;
                       const active = item.href === "/social/orm"
                         ? pathname === "/social/orm"
                         : pathname === item.href || pathname.startsWith(item.href + "/");
@@ -133,8 +157,8 @@ export function Sidebar() {
           "border-t px-2 py-2 space-y-0.5",
           "border-gray-100 dark:border-gray-700"
         )}>
-          {BOTTOM_NAV.map(item => {
-            const Icon = item.icon;
+          {visibleBottom.map(item => {
+            const Icon   = item.icon;
             const active = pathname === item.href;
             return (
               <Link key={item.href} href={item.href}
@@ -161,23 +185,22 @@ export function Sidebar() {
             )}
           </button>
 
-          {/* User */}
+          {/* User card */}
           {!collapsed && (
             <div className="flex items-center gap-2 px-2 py-2 mt-1">
               <div className="w-7 h-7 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
-                <span className="text-brand-700 font-semibold text-xs">DK</span>
+                <span className="text-brand-700 font-semibold text-xs">{initials}</span>
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-medium text-gray-900 dark:text-gray-100 truncate">Divya Krishnan</p>
-                <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">Head of Marketing</p>
+                <p className="text-xs font-medium text-gray-900 dark:text-gray-100 truncate">{userName}</p>
+                <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
+                  {(sessionUser as any)?.role === "ADMIN" ? "Admin" : (sessionUser as any)?.department ?? userEmail}
+                </p>
               </div>
             </div>
           )}
         </div>
       </aside>
-
-      {/* Spacer */}
-      <div className={cn("shrink-0 transition-all duration-200", collapsed ? "w-16" : "w-56")} />
     </>
   );
 }

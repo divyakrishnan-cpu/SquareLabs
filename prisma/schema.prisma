@@ -17,11 +17,14 @@ model User {
   password      String?
   emailVerified DateTime?
   image         String?
-  role          UserRole  @default(TEAM_MEMBER)
-  teamId        String?
-  team          Team?     @relation(fields: [teamId], references: [id])
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  role           UserRole     @default(TEAM_MEMBER)
+  department     String?                          // e.g. "Social", "Design", "Marketing"
+  accessSections AppSection[] @default([DASHBOARD])
+  teamId         String?
+  team           Team?        @relation(fields: [teamId], references: [id])
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   accounts         Account[]
   sessions         Session[]
@@ -80,10 +83,22 @@ model VerificationToken {
 // ── Teams ──────────────────────────────────────────────────────────────────
 
 enum UserRole {
+  ADMIN
   HEAD_OF_MARKETING
   TEAM_LEAD
   TEAM_MEMBER
   HR_VIEWER
+}
+
+// Sections a user is allowed to access (stored as array on User)
+enum AppSection {
+  DASHBOARD
+  SOCIAL
+  DESIGN_OPS
+  GMB
+  PORTALS
+  SETTINGS
+  TEAM_HUB
 }
 
 model Team {
