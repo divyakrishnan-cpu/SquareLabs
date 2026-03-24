@@ -16,6 +16,8 @@ type Brand    = "SY_INDIA" | "SY_UAE" | "INTERIOR" | "SQUARE_CONNECT" | "UM";
 type Platform = "IG" | "YT" | "LI" | "FB";
 type CType    = "Reel" | "Carousel" | "Static" | "YouTube Video" | "Short" | "Story";
 type Status   = "PLANNED"|"SCRIPTING"|"SCRIPT_DONE"|"FILMING"|"EDITING"|"READY"|"PUBLISHED"|"DELAYED";
+// Simplified display stages (maps to pipeline keys)
+// Planning → Shoot → Edit → Ready → Uploaded
 
 interface Item {
   id: string; brand: Brand; platforms: Platform[]; ctype: CType;
@@ -40,15 +42,15 @@ const BRAND_CFG: Record<Brand,{label:string;color:string;bg:string;dot:string}> 
   UM:             { label:"UM",         color:"text-orange-700", bg:"bg-orange-100", dot:"bg-orange-500" },
 };
 
-const PIPELINE: {key:Status;label:string;short:string;pill:string;col:string}[] = [
-  { key:"PLANNED",     label:"Planned",        short:"Planned",    pill:"bg-gray-100 text-gray-600",     col:"bg-gray-50 border-gray-200"    },
-  { key:"SCRIPTING",   label:"Script Writing", short:"Scripting",  pill:"bg-sky-100 text-sky-700",       col:"bg-sky-50 border-sky-200"      },
-  { key:"SCRIPT_DONE", label:"Script Ready",   short:"Script ✓",   pill:"bg-blue-100 text-blue-700",     col:"bg-blue-50 border-blue-200"    },
-  { key:"FILMING",     label:"Filming",        short:"Filming",    pill:"bg-violet-100 text-violet-700", col:"bg-violet-50 border-violet-200"},
-  { key:"EDITING",     label:"Editing",        short:"Editing",    pill:"bg-indigo-100 text-indigo-700", col:"bg-indigo-50 border-indigo-200"},
-  { key:"READY",       label:"Ready to Post",  short:"Ready",      pill:"bg-amber-100 text-amber-700",   col:"bg-amber-50 border-amber-200"  },
-  { key:"PUBLISHED",   label:"Published",      short:"Published",  pill:"bg-green-100 text-green-700",   col:"bg-green-50 border-green-200"  },
-  { key:"DELAYED",     label:"Delayed 🚨",     short:"Delayed",    pill:"bg-red-100 text-red-700",       col:"bg-red-50 border-red-200"      },
+const PIPELINE: {key:Status;label:string;short:string;pill:string;col:string;icon:string}[] = [
+  { key:"PLANNED",     label:"Planning",       short:"Planning",   pill:"bg-gray-100 text-gray-600",     col:"bg-gray-50 border-gray-200",    icon:"📋" },
+  { key:"SCRIPTING",   label:"Script Writing", short:"Script",     pill:"bg-sky-100 text-sky-700",       col:"bg-sky-50 border-sky-200",      icon:"✍️" },
+  { key:"SCRIPT_DONE", label:"Script Ready",   short:"Script ✓",   pill:"bg-blue-100 text-blue-700",     col:"bg-blue-50 border-blue-200",    icon:"✅" },
+  { key:"FILMING",     label:"Shoot",          short:"Shoot",      pill:"bg-violet-100 text-violet-700", col:"bg-violet-50 border-violet-200",icon:"🎥" },
+  { key:"EDITING",     label:"Edit",           short:"Edit",       pill:"bg-indigo-100 text-indigo-700", col:"bg-indigo-50 border-indigo-200",icon:"✂️" },
+  { key:"READY",       label:"Ready",          short:"Ready",      pill:"bg-amber-100 text-amber-700",   col:"bg-amber-50 border-amber-200",  icon:"🟡" },
+  { key:"PUBLISHED",   label:"Uploaded ✓",     short:"Uploaded",   pill:"bg-green-100 text-green-700",   col:"bg-green-50 border-green-200",  icon:"🚀" },
+  { key:"DELAYED",     label:"Delayed 🚨",     short:"Delayed",    pill:"bg-red-100 text-red-700",       col:"bg-red-50 border-red-200",      icon:"⚠️" },
 ];
 
 const STATUS_MAP = Object.fromEntries(PIPELINE.map(p=>[p.key,p]));

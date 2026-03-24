@@ -34,6 +34,7 @@ model User {
   linkedinIntegrations LinkedinIntegration[]
   designRequestsMade   DesignRequest[]       @relation("RequestedByUser")
   designRequestsOwned  DesignRequest[]       @relation("AssignedDesigner")
+  designDailyLogs      DesignDailyLog[]
 
   @@map("users")
 }
@@ -592,6 +593,28 @@ model DesignRequestNote {
   request   DesignRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
   @@map("design_request_notes")
+}
+
+// ── DesignOps — Daily Work Log ─────────────────────────────────────────────
+// Each designer logs what they completed each day.
+
+model DesignDailyLog {
+  id         String   @id @default(cuid())
+  userId     String
+  logDate    DateTime @db.Date            // date of the log entry (YYYY-MM-DD)
+  summary    String   @db.Text            // free-text "what I did today"
+  hoursWorked Float?                      // optional hours
+
+  // Optional links to specific requests completed
+  requestIds String[] // cuid list of DesignRequest ids referenced
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, logDate])
+  @@map("design_daily_logs")
 }
 
 // ── SM-05: Publish Notifications ──────────────────────────────────────────

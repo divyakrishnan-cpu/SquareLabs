@@ -119,7 +119,7 @@ function avatarColor(name: string): string {
 // ══════════════════════════════════════════════════════════════════════════
 
 export default function DesignOpsPage() {
-  const [view, setView]           = useState<"board" | "list" | "analytics">("board");
+  const [view, setView]           = useState<"board" | "list" | "analytics" | "mytasks">("board");
   const [requests, setRequests]   = useState<DesignRequest[]>([]);
   const [designers, setDesigners] = useState<Designer[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -204,16 +204,17 @@ export default function DesignOpsPage() {
         <div className="ml-auto flex items-center gap-2">
           {/* View toggle */}
           <div className="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5 gap-0.5">
-            {(["board", "list", "analytics"] as const).map(v => (
+            {(["board", "list", "analytics", "mytasks"] as const).map(v => (
               <button key={v} onClick={() => setView(v)}
                 className={cn("px-3 py-1.5 rounded-md text-xs font-semibold transition-all",
                   view === v
                     ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
                     : "text-gray-500 hover:text-gray-700 dark:text-gray-400"
                 )}>
-                {v === "board" ? <><LayoutGrid size={12} className="inline mr-1"/>Board</> :
-                 v === "list"  ? <><List size={12} className="inline mr-1"/>List</> :
-                 <><BarChart2 size={12} className="inline mr-1"/>Analytics</>}
+                {v === "board"    ? <><LayoutGrid size={12} className="inline mr-1"/>Board</> :
+                 v === "list"     ? <><List size={12} className="inline mr-1"/>List</> :
+                 v === "analytics"? <><BarChart2 size={12} className="inline mr-1"/>Analytics</> :
+                 <><Users size={12} className="inline mr-1"/>My Work</>}
               </button>
             ))}
           </div>
@@ -392,6 +393,11 @@ export default function DesignOpsPage() {
       {/* ── ANALYTICS VIEW ────────────────────────────────────────────── */}
       {view === "analytics" && (
         <AnalyticsView />
+      )}
+
+      {/* ── MY WORK TODAY VIEW ───────────────────────────────────────── */}
+      {view === "mytasks" && (
+        <MyWorkView requests={requests} designers={designers} onRefresh={load} />
       )}
 
       {/* Detail modal */}
@@ -979,6 +985,214 @@ function AnalyticsView() {
                   <span className="font-mono text-gray-400">{r.refId}</span>
                   <span className="flex-1 text-gray-700 dark:text-gray-300 truncate">{r.title}</span>
                   <span className="text-red-500 font-semibold shrink-0">{formatDate(r.dueDate)}</span>
+                </div>
+              ))}
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// MY WORK TODAY VIEW
+// ══════════════════════════════════════════════════════════════════════════
+
+interface DailyLog { id: string; logDate: string; summary: string; hoursWorked: number | null; requestIds: string[]; }
+
+function MyWorkView({
+  requests, designers, onRefresh,
+}: {
+  requests:   DesignRequest[];
+  designers:  Designer[];
+  onRefresh:  () => void;
+}) {
+  const [summary,    setSummary]    = useState("");
+  const [hours,      setHours]      = useState("");
+  const [linkedIds,  setLinkedIds]  = useState<string[]>([]);
+  const [logs,       setLogs]       = useState<DailyLog[]>([]);
+  const [saving,     setSaving]     = useState(false);
+  const [todayLog,   setTodayLog]   = useState<DailyLog | null>(null);
+
+  const myActive = requests.filter(r =>
+    !["DELIVERED", "CANCELLED"].includes(r.status)
+  );
+
+  const today = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" });
+  const todayIso = new Date().toISOString().split("T")[0];
+
+  useEffect(() => {
+    fetch("/api/design-ops/daily-log?days=14")
+      .then(r => r.json())
+      .then(d => {
+        if (Array.isArray(d)) {
+          setLogs(d);
+          const t = d.find(l => l.logDate.startsWith(todayIso));
+          if (t) { setTodayLog(t); setSummary(t.summary); setHours(t.hoursWorked?.toString() ?? ""); setLinkedIds(t.requestIds ?? []); }
+        }
+      });
+  }, []);
+
+  async function saveLog() {
+    if (!summary.trim()) return;
+    setSaving(true);
+    const res = await fetch("/api/design-ops/daily-log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ summary, hoursWorked: hours ? parseFloat(hours) : null, requestIds: linkedIds }),
+    });
+    const saved = await res.json();
+    setTodayLog(saved);
+    setSaving(false);
+    // Refresh logs
+    fetch("/api/design-ops/daily-log?days=14").then(r => r.json()).then(d => Array.isArray(d) && setLogs(d));
+  }
+
+  async function advanceStatus(id: string, status: Status) {
+    await fetch(`/api/design-ops/requests/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    onRefresh();
+  }
+
+  const NEXT_STATUS: Partial<Record<Status, Status>> = {
+    NEW: "IN_PROGRESS", ASSIGNED: "IN_PROGRESS", IN_PROGRESS: "REVIEW", REVIEW: "DELIVERED",
+  };
+
+  return (
+    <div className="grid grid-cols-3 gap-5">
+
+      {/* Left: Active task queue */}
+      <div className="col-span-2 space-y-4">
+        <div>
+          <h3 className="font-semibold text-gray-800 dark:text-gray-200 text-sm mb-1">Active Queue</h3>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            Requests currently assigned to you or pending start. Pull in new requests from the Board view.
+          </p>
+          {myActive.length === 0
+            ? <div className="bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-8 text-center">
+                <p className="text-sm text-gray-400">No active tasks. Go to Board view to pick up new requests.</p>
+              </div>
+            : <div className="space-y-2">
+              {myActive.map(r => {
+                const tc = TYPE_CONFIG[r.type];
+                const sc = STATUS_CONFIG[r.status];
+                const next = NEXT_STATUS[r.status];
+                const overdue = isOverdue(r);
+                const elapsed = r.startedAt ? Math.round(elapsedHours(r.startedAt)) : null;
+                return (
+                  <div key={r.id} className={cn(
+                    "bg-white dark:bg-gray-800 rounded-xl border p-4",
+                    overdue ? "border-red-300 dark:border-red-700 border-l-4 border-l-red-500" : "border-gray-200 dark:border-gray-700"
+                  )}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className="text-[10px] font-mono text-gray-400">{r.refId}</span>
+                          <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", sc.bg, sc.color)}>
+                            {sc.icon} {sc.label}
+                          </span>
+                          {overdue && <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">OVERDUE</span>}
+                          <span className={cn("text-[10px] px-1.5 py-0.5 rounded font-medium", TEAM_CONFIG[r.requestingTeam].color)}>
+                            {TEAM_CONFIG[r.requestingTeam].label}
+                          </span>
+                        </div>
+                        <p className="font-semibold text-sm text-gray-800 dark:text-gray-200 truncate">{r.title}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{r.brief}</p>
+                        <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                          <span>{tc.icon} {tc.label}</span>
+                          <span>Due: <span className={cn(overdue ? "text-red-500 font-semibold" : "")}>{formatDate(r.dueDate)}</span></span>
+                          {elapsed !== null && <span>⏱ {elapsed}h elapsed</span>}
+                          {r.revisionCount > 0 && <span className="text-orange-500">↩ {r.revisionCount} revision{r.revisionCount > 1 ? "s" : ""}</span>}
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2 shrink-0">
+                        {next && (
+                          <button onClick={() => advanceStatus(r.id, next)}
+                            className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-blue-700 whitespace-nowrap">
+                            {next === "IN_PROGRESS" ? "▶ Start" :
+                             next === "REVIEW"      ? "👁 Review" :
+                             next === "DELIVERED"   ? "✅ Done"   : "→ Next"}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setLinkedIds(prev => prev.includes(r.id) ? prev.filter(x => x !== r.id) : [...prev, r.id])}
+                          className={cn("text-xs px-3 py-1.5 rounded-lg border font-medium",
+                            linkedIds.includes(r.id)
+                              ? "bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700 text-green-700 dark:text-green-400"
+                              : "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
+                          )}>
+                          {linkedIds.includes(r.id) ? "✓ Logged" : "+ Log today"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          }
+        </div>
+      </div>
+
+      {/* Right: Daily log */}
+      <div className="space-y-4">
+        {/* Today's log */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-sm">📝</div>
+            <div>
+              <p className="text-xs font-bold text-gray-800 dark:text-gray-200">Today's Update</p>
+              <p className="text-[10px] text-gray-400">{today}</p>
+            </div>
+            {todayLog && <span className="ml-auto text-[10px] font-bold text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-full">Saved</span>}
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide block mb-1">What did you work on today?</label>
+              <textarea
+                value={summary} onChange={e => setSummary(e.target.value)} rows={4}
+                placeholder="e.g. Completed editing for REQ-007, started rough cut for REQ-009, attended brief review for REQ-012…"
+                className="w-full text-sm border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide block mb-1">Hours worked</label>
+              <input type="number" step="0.5" min="0" max="12" value={hours} onChange={e => setHours(e.target.value)}
+                placeholder="e.g. 7.5"
+                className="w-full text-sm border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+            </div>
+            {linkedIds.length > 0 && (
+              <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-2 text-xs text-green-700 dark:text-green-400">
+                ✓ Linked: {linkedIds.length} request{linkedIds.length > 1 ? "s" : ""} will be included in this log
+              </div>
+            )}
+            <button onClick={saveLog} disabled={saving || !summary.trim()}
+              className="w-full bg-blue-600 text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2">
+              {saving ? <Loader2 size={13} className="animate-spin"/> : <Send size={13}/>}
+              {todayLog ? "Update Today's Log" : "Save Log"}
+            </button>
+          </div>
+        </div>
+
+        {/* Recent logs */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+          <p className="text-xs font-bold text-gray-700 dark:text-gray-300 mb-3">Recent Logs</p>
+          {logs.filter(l => !l.logDate.startsWith(todayIso)).length === 0
+            ? <p className="text-xs text-gray-400 italic">No previous logs.</p>
+            : <div className="space-y-3">
+              {logs.filter(l => !l.logDate.startsWith(todayIso)).slice(0, 7).map(l => (
+                <div key={l.id} className="border-l-2 border-gray-200 dark:border-gray-600 pl-3">
+                  <p className="text-[10px] text-gray-400 font-semibold">
+                    {new Date(l.logDate).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
+                    {l.hoursWorked && <span className="ml-1">· {l.hoursWorked}h</span>}
+                  </p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 line-clamp-2">{l.summary}</p>
+                  {l.requestIds?.length > 0 && (
+                    <p className="text-[10px] text-gray-400 mt-0.5">{l.requestIds.length} request{l.requestIds.length > 1 ? "s" : ""} logged</p>
+                  )}
                 </div>
               ))}
             </div>
