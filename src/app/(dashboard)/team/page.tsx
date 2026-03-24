@@ -73,7 +73,8 @@ function TeamPageInner() {
   const [importing,  setImporting]  = useState(false);
   const [importDone, setImportDone] = useState<{created:number;updated:number}|null>(null);
   const { data: session } = useSession();
-  const isAdmin = (session?.user as any)?.role === "ADMIN";
+  const userRole = (session?.user as any)?.role;
+  const isAdmin = userRole === "ADMIN" || userRole === "HEAD_OF_MARKETING";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -383,35 +384,36 @@ function MemberCard({ member: m, onEdit, onToggle }: {
         </div>
       </div>
 
-      {/* Role badge */}
-      <div className="mb-3">
-        <span className={cn("text-[10px] font-bold px-2.5 py-1 rounded-full", ROLE_COLORS[m.role])}>
+      {/* Role + Department row */}
+      <div className="flex items-center gap-1.5 flex-wrap mb-3">
+        <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", ROLE_COLORS[m.role])}>
           {m.role === "ADMIN" && "🛡️ "}
           {ROLE_LABELS[m.role]}
         </span>
+        {m.department && (
+          <span className={cn("text-[10px] font-semibold px-2 py-0.5 rounded-full", tc)}>
+            {m.department}
+          </span>
+        )}
       </div>
 
-      {/* Department */}
-      {m.department && (
-        <span className={cn("inline-block text-[10px] font-semibold px-2.5 py-1 rounded-full mb-3", tc)}>
-          {m.department}
-        </span>
-      )}
-
       {/* Section access */}
-      <div className="border-t border-gray-100 dark:border-gray-700 pt-3 mt-1">
-        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Access</p>
+      <div className="border-t border-gray-100 dark:border-gray-700 pt-3 mt-2">
+        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-2">Access</p>
         <div className="flex flex-wrap gap-1">
           {(m.accessSections ?? []).length === 0
-            ? <span className="text-[10px] text-gray-400 italic">No access</span>
-            : (m.accessSections ?? []).slice(0,4).map(s => (
-              <span key={s} className="inline-flex items-center gap-0.5 text-[9px] font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 px-1.5 py-0.5 rounded-md">
-                {SECTION_ICONS[s]}
+            ? <span className="text-[10px] text-gray-400 italic">Full access</span>
+            : (m.accessSections ?? []).slice(0, 5).map(s => (
+              <span key={s} className="inline-flex items-center gap-1 text-[10px] font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full border border-blue-100 dark:border-blue-800">
+                <span>{SECTION_ICONS[s]}</span>
+                <span>{SECTION_LABELS[s]?.split(" ")[0]}</span>
               </span>
             ))
           }
-          {(m.accessSections ?? []).length > 4 && (
-            <span className="text-[9px] text-gray-400">+{m.accessSections.length - 4}</span>
+          {(m.accessSections ?? []).length > 5 && (
+            <span className="text-[10px] font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-2 py-0.5 rounded-full">
+              +{m.accessSections.length - 5} more
+            </span>
           )}
         </div>
       </div>

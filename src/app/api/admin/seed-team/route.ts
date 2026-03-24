@@ -117,7 +117,7 @@ export async function POST(req: Request) {
   // Must be authenticated as ADMIN
   const session = await getServerSession(authOptions);
   const user = session?.user as any;
-  if (!session || user?.role !== "ADMIN") {
+  if (!session || !["ADMIN","HEAD_OF_MARKETING"].includes(user?.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -147,7 +147,7 @@ export async function POST(req: Request) {
       await (db.user as any).upsert({
         where:  { email },
         create: { name: member.name, email, password: hashedPwd, role, department: member.team, accessSections, isActive: true },
-        // Don't overwrite password for existing users
+        // Don't overwrite password for existing users; always sync role + sections
         update: { name: member.name, role, department: member.team, accessSections, isActive: true },
       });
 
