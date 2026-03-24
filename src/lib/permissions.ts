@@ -38,13 +38,17 @@ export function isAdmin(user?: SessionUser | null): boolean {
 
 /**
  * Returns true if the user can access the given section.
- * ADMINs always pass. Other users must have the section in accessSections.
+ * ADMINs always pass. If accessSections is empty/unset (user not yet
+ * assigned restrictions), treat as full access. Only restrict when
+ * accessSections is explicitly populated with specific sections.
  */
 export function canAccess(user?: SessionUser | null, section?: AppSection): boolean {
-  if (!user) return false;
-  if (isAdmin(user)) return true;
+  if (!user) return true;          // session loading — show everything
+  if (isAdmin(user)) return true;  // admins see all
   if (!section) return true;
-  return (user.accessSections ?? []).includes(section);
+  const sections = user.accessSections ?? [];
+  if (sections.length === 0) return true;  // no restrictions configured yet
+  return sections.includes(section);
 }
 
 /** Returns the list of sections a user can access (for sidebar rendering). */
