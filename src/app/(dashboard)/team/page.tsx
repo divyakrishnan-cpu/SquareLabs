@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback, Suspense } from "react";
+import { useSession } from "next-auth/react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   Users, ShieldCheck, GitBranch, Plus, Search, RefreshCw,
   Edit2, X, Check, Copy, AlertTriangle, Eye, EyeOff,
-  ChevronDown, Filter, UserPlus, MoreHorizontal,
+  ChevronDown, Filter, UserPlus, MoreHorizontal, Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -69,6 +70,10 @@ function TeamPageInner() {
   const [members,    setMembers]    = useState<Member[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [showAdd,    setShowAdd]    = useState(false);
+  const [importing,  setImporting]  = useState(false);
+  const [importDone, setImportDone] = useState<{created:number;updated:number}|null>(null);
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -117,6 +122,29 @@ function TeamPageInner() {
                 className="p-2 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-500 transition-colors">
                 <RefreshCw size={15} className={loading ? "animate-spin" : ""}/>
               </button>
+              {isAdmin && (
+                <button
+                  onClick={async () => {
+                    if (!confirm(`Import all 67 team members from CSV data?\nExisting users won't have passwords changed.`)) return;
+                    setImporting(true);
+                    const res = await fetch("/api/admin/seed-team", { method: "POST" });
+                    const data = await res.json();
+                    setImporting(false);
+                    if (res.ok) { setImportDone(data.summary); load(); }
+                    else alert("Import failed: " + data.error);
+                  }}
+                  disabled={importing}
+                  className="flex items-center gap-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 px-3 py-2 rounded-xl font-medium text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                >
+                  <Download size={14} className={importing ? "animate-bounce" : ""}/>
+                  {importing ? "Importing…" : "Import Team"}
+                </button>
+              )}
+              {importDone && (
+                <span className="text-xs text-green-600 font-medium bg-green-50 dark:bg-green-900/20 px-3 py-1.5 rounded-lg">
+                  ✓ {importDone.created} added, {importDone.updated} updated
+                </span>
+              )}
               <button onClick={() => setShowAdd(true)}
                 className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-2 rounded-xl font-semibold text-sm hover:opacity-90 shadow-sm transition-opacity">
                 <UserPlus size={15}/> Add Member
