@@ -6,8 +6,10 @@ import { db as prisma }    from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 // ── GET /api/design-ops/daily-log ─────────────────────────────────────────
-// Returns logs for the authenticated user (last 14 days by default)
-// Query param: userId (for admin to view another person's logs)
+// Returns logs for a given user (last N days)
+// Query params:
+//   userId — whose logs to fetch (defaults to session user)
+//   days   — how many days back (default 14)
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
@@ -27,28 +29,45 @@ export async function GET(req: Request) {
 }
 
 // ── POST /api/design-ops/daily-log ────────────────────────────────────────
-// Upsert today's log for the authenticated user
+// Upsert today's log.
+// Body may include `userId` to log on behalf of a specific team member
+// (e.g. a manager logging for a designer from the My Work view).
+// Falls back to the authenticated user's ID if omitted.
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
 
-  const userId = (session.user as any).id;
-  const body   = await req.json();
+  const body = await req.json();
   const { summary, hoursWorked, requestIds, logDate } = body;
+
+  // Allow an explicit userId override — useful for the designer-picker flow
+  const userId: string = body.userId ?? (session.user as any).id;
 
   if (!summary?.trim()) {
     return NextResponse.json({ error: "summary is required" }, { status: 400 });
   }
+  if (!userId) {
+    return NextResponse.json({ error: "userId is required" }, { status: 400 });
+  }
 
-  // Use today's date if not specified
   const date = logDate ? new Date(logDate) : new Date();
   date.setHours(0, 0, 0, 0);
 
   const log = await (prisma as any).designDailyLog.upsert({
     where:  { userId_logDate: { userId, logDate: date } },
-    create: { userId, logDate: date, summary, hoursWorked: hoursWorked ?? null, requestIds: requestIds ?? [] },
-    update: { summary, hoursWorked: hoursWorked ?? null, requestIds: requestIds ?? [] },
+    create: {
+      userId,
+      logDate:     date,
+      summary,
+      hoursWorked: hoursWorked ?? null,
+      requestIds:  requestIds  ?? [],
+    },
+    update: {
+      summary,
+      hoursWorked: hoursWorked ?? null,
+      requestIds:  requestIds  ?? [],
+    },
   });
 
   return NextResponse.json(log);

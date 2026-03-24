@@ -1028,7 +1028,7 @@ function AnalyticsView() {
 // MY WORK TODAY VIEW
 // ══════════════════════════════════════════════════════════════════════════
 
-interface DailyLog { id: string; logDate: string; summary: string; hoursWorked: number | null; requestIds: string[]; }
+interface DailyLog { id: string; logDate: string; summary: string; hoursWorked: number | null; requestIds: string[]; userId?: string; }
 
 function MyWorkView({
   requests, designers, onRefresh,
@@ -1037,197 +1037,308 @@ function MyWorkView({
   designers:  Designer[];
   onRefresh:  () => void;
 }) {
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [summary,    setSummary]    = useState("");
   const [hours,      setHours]      = useState("");
   const [linkedIds,  setLinkedIds]  = useState<string[]>([]);
   const [logs,       setLogs]       = useState<DailyLog[]>([]);
   const [saving,     setSaving]     = useState(false);
   const [todayLog,   setTodayLog]   = useState<DailyLog | null>(null);
+  const [showProjectPicker, setShowProjectPicker] = useState(false);
 
-  const myActive = requests.filter(r =>
-    !["DELIVERED", "CANCELLED"].includes(r.status)
+  // Requests assigned to selected user (any non-terminal status)
+  const assignedRequests = requests.filter(r =>
+    !["DELIVERED","CANCELLED"].includes(r.status) &&
+    (selectedUserId ? r.assignedTo?.id === selectedUserId : false)
   );
 
-  const today = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" });
+  const today    = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" });
   const todayIso = new Date().toISOString().split("T")[0];
 
+  // Load logs whenever selected user changes
   useEffect(() => {
-    fetch("/api/design-ops/daily-log?days=14")
-      .then(r => r.json())
-      .then(d => {
-        if (Array.isArray(d)) {
-          setLogs(d);
-          const t = d.find(l => l.logDate.startsWith(todayIso));
-          if (t) { setTodayLog(t); setSummary(t.summary); setHours(t.hoursWorked?.toString() ?? ""); setLinkedIds(t.requestIds ?? []); }
+    if (!selectedUserId) return;
+    const url = `/api/design-ops/daily-log?days=14&userId=${selectedUserId}`;
+    fetch(url).then(r => r.json()).then(d => {
+      if (Array.isArray(d)) {
+        setLogs(d);
+        const t = d.find((l: DailyLog) => l.logDate.startsWith(todayIso));
+        if (t) {
+          setTodayLog(t); setSummary(t.summary);
+          setHours(t.hoursWorked?.toString() ?? "");
+          setLinkedIds(t.requestIds ?? []);
+        } else {
+          setTodayLog(null); setSummary(""); setHours(""); setLinkedIds([]);
         }
-      });
-  }, []);
+      }
+    });
+  }, [selectedUserId]);
+
+  function toggleProject(id: string) {
+    setLinkedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
 
   async function saveLog() {
-    if (!summary.trim()) return;
+    if (!summary.trim() || !selectedUserId) return;
     setSaving(true);
     const res = await fetch("/api/design-ops/daily-log", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ summary, hoursWorked: hours ? parseFloat(hours) : null, requestIds: linkedIds }),
+      body: JSON.stringify({
+        userId: selectedUserId,
+        summary,
+        hoursWorked: hours ? parseFloat(hours) : null,
+        requestIds:  linkedIds,
+      }),
     });
     const saved = await res.json();
     setTodayLog(saved);
     setSaving(false);
-    // Refresh logs
-    fetch("/api/design-ops/daily-log?days=14").then(r => r.json()).then(d => Array.isArray(d) && setLogs(d));
-  }
-
-  async function advanceStatus(id: string, status: Status) {
-    await fetch(`/api/design-ops/requests/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    onRefresh();
+    fetch(`/api/design-ops/daily-log?days=14&userId=${selectedUserId}`)
+      .then(r => r.json()).then(d => Array.isArray(d) && setLogs(d));
   }
 
   const NEXT_STATUS: Partial<Record<Status, Status>> = {
     NEW: "IN_PROGRESS", ASSIGNED: "IN_PROGRESS", IN_PROGRESS: "REVIEW", REVIEW: "DELIVERED",
   };
+  async function advanceStatus(id: string, status: Status) {
+    await fetch(`/api/design-ops/requests/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    onRefresh();
+  }
+
+  const selectedDesigner = designers.find(d => d.id === selectedUserId);
 
   return (
-    <div className="grid grid-cols-3 gap-5">
+    <div className="space-y-5">
 
-      {/* Left: Active task queue */}
-      <div className="col-span-2 space-y-4">
-        <div>
-          <h3 className="font-semibold text-gray-800 dark:text-gray-200 text-sm mb-1">Active Queue</h3>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            Requests currently assigned to you or pending start. Pull in new requests from the Board view.
-          </p>
-          {myActive.length === 0
-            ? <div className="bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-8 text-center">
-                <p className="text-sm text-gray-400">No active tasks. Go to Board view to pick up new requests.</p>
+      {/* ── Step 1: Who are you? ─────────────────────────────── */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
+          Step 1 — Who are you logging for?
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+          {designers.map(d => (
+            <button key={d.id}
+              onClick={() => setSelectedUserId(d.id)}
+              className={cn(
+                "flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all",
+                selectedUserId === d.id
+                  ? "bg-blue-600 border-blue-600 text-white shadow-sm"
+                  : "border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-gray-700"
+              )}>
+              <div className={cn(
+                "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0",
+                selectedUserId === d.id ? "bg-white/20 text-white" : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400"
+              )}>
+                {d.name?.charAt(0).toUpperCase() ?? "?"}
               </div>
-            : <div className="space-y-2">
-              {myActive.map(r => {
-                const tc = TYPE_CONFIG[r.type];
-                const sc = STATUS_CONFIG[r.status];
-                const next = NEXT_STATUS[r.status];
-                const overdue = isOverdue(r);
-                const elapsed = r.startedAt ? Math.round(elapsedHours(r.startedAt)) : null;
-                return (
-                  <div key={r.id} className={cn(
-                    "bg-white dark:bg-gray-800 rounded-xl border p-4",
-                    overdue ? "border-red-300 dark:border-red-700 border-l-4 border-l-red-500" : "border-gray-200 dark:border-gray-700"
-                  )}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="text-[10px] font-mono text-gray-400">{r.refId}</span>
-                          <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", sc.bg, sc.color)}>
-                            {sc.icon} {sc.label}
-                          </span>
-                          {overdue && <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">OVERDUE</span>}
-                          <span className={cn("text-[10px] px-1.5 py-0.5 rounded font-medium", TEAM_CONFIG[r.requestingTeam].color)}>
-                            {TEAM_CONFIG[r.requestingTeam].label}
-                          </span>
+              <span className="truncate">{d.name?.split(" ")[0] ?? "User"}</span>
+              {d.activeRequests > 0 && (
+                <span className={cn(
+                  "ml-auto text-[10px] font-bold px-1.5 rounded-full",
+                  selectedUserId === d.id ? "bg-white/20 text-white" : "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
+                )}>{d.activeRequests}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {selectedUserId && (
+        <div className="grid grid-cols-3 gap-5">
+
+          {/* ── Step 2: Select projects ───────────────────────── */}
+          <div className="col-span-2 space-y-4">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                    Step 2 — Select projects worked on today
+                  </p>
+                  <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">
+                    Requests assigned to {selectedDesigner?.name ?? "this person"}
+                  </p>
+                </div>
+                {linkedIds.length > 0 && (
+                  <span className="text-[10px] font-bold bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2.5 py-1 rounded-full">
+                    {linkedIds.length} selected
+                  </span>
+                )}
+              </div>
+
+              {assignedRequests.length === 0
+                ? <div className="border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl p-6 text-center">
+                    <p className="text-sm text-gray-400 dark:text-gray-500">
+                      No active requests assigned to {selectedDesigner?.name?.split(" ")[0] ?? "this person"}.
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Assign requests from the Board view first.</p>
+                  </div>
+                : <div className="space-y-2">
+                  {assignedRequests.map(r => {
+                    const tc      = TYPE_CONFIG[r.type];
+                    const sc      = STATUS_CONFIG[r.status];
+                    const checked = linkedIds.includes(r.id);
+                    const overdue = isOverdue(r);
+                    const next    = NEXT_STATUS[r.status];
+                    return (
+                      <div key={r.id}
+                        onClick={() => toggleProject(r.id)}
+                        className={cn(
+                          "flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all",
+                          checked
+                            ? "border-blue-400 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                            : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 bg-white dark:bg-gray-800",
+                          overdue && !checked ? "border-l-4 border-l-red-400" : ""
+                        )}>
+                        {/* Checkbox */}
+                        <div className={cn(
+                          "w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all",
+                          checked ? "bg-blue-600 border-blue-600" : "border-gray-300 dark:border-gray-600"
+                        )}>
+                          {checked && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 12 12">
+                            <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>}
                         </div>
-                        <p className="font-semibold text-sm text-gray-800 dark:text-gray-200 truncate">{r.title}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{r.brief}</p>
-                        <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                          <span>{tc.icon} {tc.label}</span>
-                          <span>Due: <span className={cn(overdue ? "text-red-500 font-semibold" : "")}>{formatDate(r.dueDate)}</span></span>
-                          {elapsed !== null && <span>⏱ {elapsed}h elapsed</span>}
-                          {r.revisionCount > 0 && <span className="text-orange-500">↩ {r.revisionCount} revision{r.revisionCount > 1 ? "s" : ""}</span>}
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-mono text-gray-400">{r.refId}</span>
+                            <span className="text-sm">{tc.icon}</span>
+                            <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", sc.bg, sc.color)}>
+                              {sc.icon} {sc.label}
+                            </span>
+                            {overdue && <span className="text-[10px] font-bold text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full">OVERDUE</span>}
+                          </div>
+                          <p className="font-semibold text-sm text-gray-800 dark:text-gray-200 mt-0.5 truncate">{r.title}</p>
+                          <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-400">
+                            <span>{tc.label}</span>
+                            {r.dueDate && <span>Due {formatDate(r.dueDate)}</span>}
+                            <span className={cn(TEAM_CONFIG[r.requestingTeam].color, "px-1.5 py-0.5 rounded text-[10px] font-medium")}>
+                              {TEAM_CONFIG[r.requestingTeam].label}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex flex-col gap-2 shrink-0">
+                        {/* Quick advance */}
                         {next && (
-                          <button onClick={() => advanceStatus(r.id, next)}
-                            className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-blue-700 whitespace-nowrap">
-                            {next === "IN_PROGRESS" ? "▶ Start" :
-                             next === "REVIEW"      ? "👁 Review" :
-                             next === "DELIVERED"   ? "✅ Done"   : "→ Next"}
+                          <button
+                            onClick={e => { e.stopPropagation(); advanceStatus(r.id, next); }}
+                            className="text-[10px] bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-blue-600 hover:text-white px-2.5 py-1.5 rounded-lg font-semibold shrink-0 whitespace-nowrap transition-colors">
+                            {next === "IN_PROGRESS" ? "▶ Start" : next === "REVIEW" ? "👁 Review" : "✅ Done"}
                           </button>
                         )}
-                        <button
-                          onClick={() => setLinkedIds(prev => prev.includes(r.id) ? prev.filter(x => x !== r.id) : [...prev, r.id])}
-                          className={cn("text-xs px-3 py-1.5 rounded-lg border font-medium",
-                            linkedIds.includes(r.id)
-                              ? "bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700 text-green-700 dark:text-green-400"
-                              : "border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
-                          )}>
-                          {linkedIds.includes(r.id) ? "✓ Logged" : "+ Log today"}
-                        </button>
                       </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          }
-        </div>
-      </div>
-
-      {/* Right: Daily log */}
-      <div className="space-y-4">
-        {/* Today's log */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-sm">📝</div>
-            <div>
-              <p className="text-xs font-bold text-gray-800 dark:text-gray-200">Today's Update</p>
-              <p className="text-[10px] text-gray-400">{today}</p>
-            </div>
-            {todayLog && <span className="ml-auto text-[10px] font-bold text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-full">Saved</span>}
-          </div>
-          <div className="space-y-3">
-            <div>
-              <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide block mb-1">What did you work on today?</label>
-              <textarea
-                value={summary} onChange={e => setSummary(e.target.value)} rows={4}
-                placeholder="e.g. Completed editing for REQ-007, started rough cut for REQ-009, attended brief review for REQ-012…"
-                className="w-full text-sm border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide block mb-1">Hours worked</label>
-              <input type="number" step="0.5" min="0" max="12" value={hours} onChange={e => setHours(e.target.value)}
-                placeholder="e.g. 7.5"
-                className="w-full text-sm border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-            </div>
-            {linkedIds.length > 0 && (
-              <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-2 text-xs text-green-700 dark:text-green-400">
-                ✓ Linked: {linkedIds.length} request{linkedIds.length > 1 ? "s" : ""} will be included in this log
-              </div>
-            )}
-            <button onClick={saveLog} disabled={saving || !summary.trim()}
-              className="w-full bg-blue-600 text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2">
-              {saving ? <Loader2 size={13} className="animate-spin"/> : <Send size={13}/>}
-              {todayLog ? "Update Today's Log" : "Save Log"}
-            </button>
-          </div>
-        </div>
-
-        {/* Recent logs */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-          <p className="text-xs font-bold text-gray-700 dark:text-gray-300 mb-3">Recent Logs</p>
-          {logs.filter(l => !l.logDate.startsWith(todayIso)).length === 0
-            ? <p className="text-xs text-gray-400 italic">No previous logs.</p>
-            : <div className="space-y-3">
-              {logs.filter(l => !l.logDate.startsWith(todayIso)).slice(0, 7).map(l => (
-                <div key={l.id} className="border-l-2 border-gray-200 dark:border-gray-600 pl-3">
-                  <p className="text-[10px] text-gray-400 font-semibold">
-                    {new Date(l.logDate).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
-                    {l.hoursWorked && <span className="ml-1">· {l.hoursWorked}h</span>}
-                  </p>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 line-clamp-2">{l.summary}</p>
-                  {l.requestIds?.length > 0 && (
-                    <p className="text-[10px] text-gray-400 mt-0.5">{l.requestIds.length} request{l.requestIds.length > 1 ? "s" : ""} logged</p>
-                  )}
+                    );
+                  })}
                 </div>
-              ))}
+              }
             </div>
-          }
+          </div>
+
+          {/* ── Step 3: Write update ──────────────────────────── */}
+          <div className="space-y-4">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-sm">📝</div>
+                <div>
+                  <p className="text-xs font-bold text-gray-800 dark:text-gray-200">
+                    Step 3 — Today's Update
+                  </p>
+                  <p className="text-[10px] text-gray-400">{today}</p>
+                </div>
+                {todayLog && (
+                  <span className="ml-auto text-[10px] font-bold text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-full">
+                    Saved
+                  </span>
+                )}
+              </div>
+
+              {linkedIds.length > 0 && (
+                <div className="mb-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2 flex flex-wrap gap-1.5">
+                  {linkedIds.map(id => {
+                    const r = requests.find(x => x.id === id);
+                    return r ? (
+                      <span key={id} className="inline-flex items-center gap-1 text-[10px] font-semibold bg-white dark:bg-gray-700 border border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full">
+                        {r.refId}
+                        <button onClick={() => toggleProject(id)} className="hover:text-red-500 ml-0.5">×</button>
+                      </span>
+                    ) : null;
+                  })}
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide block mb-1">
+                    Progress notes
+                  </label>
+                  <textarea
+                    value={summary} onChange={e => setSummary(e.target.value)} rows={4}
+                    placeholder={linkedIds.length > 0
+                      ? `What progress was made on ${linkedIds.length > 1 ? "these projects" : "this project"} today?`
+                      : "Select projects above, then describe today's progress…"}
+                    className="w-full text-sm border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide block mb-1">Hours worked</label>
+                  <input type="number" step="0.5" min="0" max="12" value={hours} onChange={e => setHours(e.target.value)}
+                    placeholder="e.g. 7.5"
+                    className="w-full text-sm border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+                </div>
+                <button onClick={saveLog} disabled={saving || !summary.trim() || !selectedUserId}
+                  className="w-full bg-blue-600 text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                  {saving ? <Loader2 size={13} className="animate-spin"/> : <Send size={13}/>}
+                  {todayLog ? "Update Log" : "Save Log"}
+                </button>
+              </div>
+            </div>
+
+            {/* Recent logs for this person */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+              <p className="text-xs font-bold text-gray-700 dark:text-gray-300 mb-3">
+                Recent Logs — {selectedDesigner?.name?.split(" ")[0]}
+              </p>
+              {logs.filter(l => !l.logDate.startsWith(todayIso)).length === 0
+                ? <p className="text-xs text-gray-400 italic">No previous logs.</p>
+                : <div className="space-y-3">
+                  {logs.filter(l => !l.logDate.startsWith(todayIso)).slice(0, 7).map(l => (
+                    <div key={l.id} className="border-l-2 border-gray-200 dark:border-gray-600 pl-3">
+                      <p className="text-[10px] text-gray-400 font-semibold">
+                        {new Date(l.logDate).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
+                        {l.hoursWorked && <span className="ml-1">· {l.hoursWorked}h</span>}
+                      </p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5 line-clamp-2">{l.summary}</p>
+                      {l.requestIds?.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {l.requestIds.map((rid: string) => {
+                            const r = requests.find(x => x.id === rid);
+                            return r ? (
+                              <span key={rid} className="text-[10px] bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded">
+                                {r.refId}
+                              </span>
+                            ) : null;
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              }
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {!selectedUserId && (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="text-4xl mb-3">👆</div>
+          <p className="text-sm font-semibold text-gray-600 dark:text-gray-400">Select your name above to get started</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Your assigned projects and today's log will appear here</p>
+        </div>
+      )}
     </div>
   );
 }
