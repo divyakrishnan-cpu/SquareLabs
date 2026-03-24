@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import {
   BarChart2, Layers, CalendarDays, User2, Plus, Search, RefreshCw,
   Clock, AlertTriangle, CheckCircle2, TrendingUp, TrendingDown,
-  Filter, ChevronDown, X, Edit2, Eye, Loader2, ArrowUpRight,
+  Filter, ChevronDown, X, Edit2, Eye, Loader2, ArrowUpRight, Check,
   Inbox, Users, Zap, Timer, Target, FileText,
 } from "lucide-react";
 import {
@@ -542,13 +542,18 @@ function CalendarTab() {
 // ── MY WORK TAB ───────────────────────────────────────────────────────────
 
 function MyWorkTab() {
-  const [users,   setUsers]   = useState<{id:string;name:string}[]>([]);
-  const [userId,  setUserId]  = useState("");
-  const [summary, setSummary] = useState("");
-  const [hours,   setHours]   = useState("");
-  const [saving,  setSaving]  = useState(false);
-  const [done,    setDone]    = useState(false);
+  const [users,        setUsers]        = useState<{id:string;name:string}[]>([]);
+  const [userId,       setUserId]       = useState("");
+  const [myRequests,   setMyRequests]   = useState<DesignReq[]>([]);
+  const [loadingReqs,  setLoadingReqs]  = useState(false);
+  // Map of requestId → new status update ("" means no change, "DELIVERED" etc)
+  const [statusUpdates, setStatusUpdates] = useState<Record<string, string>>({});
+  const [selectedIds,  setSelectedIds]  = useState<Set<string>>(new Set());
+  const [hours,        setHours]        = useState("");
+  const [saving,       setSaving]       = useState(false);
+  const [done,         setDone]         = useState(false);
 
+  // Load designer list (Design + Video teams)
   useEffect(() => {
     fetch("/api/team").then(r => r.json()).then(data => {
       const designers = data.filter((u: any) =>
@@ -558,56 +563,212 @@ function MyWorkTab() {
     }).catch(() => {});
   }, []);
 
+  // Load that designer's active requests when userId changes
+  useEffect(() => {
+    if (!userId) { setMyRequests([]); return; }
+    setLoadingReqs(true);
+    fetch(`/api/design-ops/requests?assignedToId=${userId}`)
+      .then(r => r.json())
+      .then(data => {
+        // Show only active (not delivered/cancelled)
+        setMyRequests(
+          (Array.isArray(data) ? data : [])
+            .filter((r: DesignReq) => !["DELIVERED","CANCELLED"].includes(r.status))
+        );
+        setSelectedIds(new Set());
+        setStatusUpdates({});
+      })
+      .catch(() => {})
+      .finally(() => setLoadingReqs(false));
+  }, [userId]);
+
+  function toggleSelect(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
   async function save() {
-    if (!userId || !summary) return;
+    if (!userId || selectedIds.size === 0) return;
     setSaving(true);
+
+    // Update status for each selected request that has a status change
+    await Promise.all(
+      Array.from(selectedIds).map(async id => {
+        const newStatus = statusUpdates[id];
+        if (newStatus) {
+          await fetch(`/api/team/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: newStatus }),
+          });
+        }
+      })
+    );
+
+    // Save daily log with selected request IDs as summary
+    const selectedTitles = myRequests
+      .filter(r => selectedIds.has(r.id))
+      .map(r => r.title)
+      .join("; ");
+
     await fetch("/api/design-ops/daily-log", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, summary, hoursWorked: hours ? parseFloat(hours) : null }),
+      body: JSON.stringify({
+        userId,
+        summary: selectedTitles,
+        hoursWorked: hours ? parseFloat(hours) : null,
+        requestIds: Array.from(selectedIds),
+      }),
     });
+
     setSaving(false);
     setDone(true);
-    setSummary(""); setHours("");
+    setSelectedIds(new Set());
+    setStatusUpdates({});
+    setHours("");
+    // Reload requests
+    const fresh = await fetch(`/api/design-ops/requests?assignedToId=${userId}`).then(r => r.json());
+    setMyRequests(
+      (Array.isArray(fresh) ? fresh : [])
+        .filter((r: DesignReq) => !["DELIVERED","CANCELLED"].includes(r.status))
+    );
     setTimeout(() => setDone(false), 3000);
   }
 
+  const WORK_STATUSES = [
+    { value: "", label: "No change" },
+    { value: "IN_PROGRESS", label: "Still in progress" },
+    { value: "REVIEW", label: "Sent for review" },
+    { value: "DELIVERED", label: "Delivered ✓" },
+  ];
+
   return (
-    <div className="max-w-xl mx-auto">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-6">
-        <h3 className="font-bold text-gray-900 dark:text-white mb-1">Log Today's Work</h3>
-        <p className="text-sm text-gray-400 mb-5">What did the design team complete today?</p>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1.5">Designer</label>
-            <select value={userId} onChange={e => setUserId(e.target.value)}
-              className="w-full border border-gray-200 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
-              <option value="">Select designer…</option>
-              {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1.5">Work Summary</label>
-            <textarea value={summary} onChange={e => setSummary(e.target.value)} rows={4}
-              placeholder="e.g. Completed 3 reels for She Leads series, reviewed brand guidelines for Azuro…"
-              className="w-full border border-gray-200 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white resize-none"/>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1.5">Hours worked <span className="text-gray-300 font-normal">(optional)</span></label>
-            <input type="number" value={hours} onChange={e => setHours(e.target.value)} min="0" max="24" step="0.5"
-              placeholder="e.g. 7.5"
-              className="w-full border border-gray-200 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"/>
-          </div>
-
-          <button onClick={save} disabled={saving || !userId || !summary}
-            className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold rounded-xl py-2.5 text-sm transition-colors">
-            {saving ? <><Loader2 size={14} className="animate-spin"/> Saving…</> : done ? "✓ Saved!" : "Save Today's Log"}
-          </button>
-        </div>
+    <div className="max-w-2xl mx-auto space-y-4">
+      {/* Step 1 — Pick designer */}
+      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Step 1 — Select Designer</p>
+        <select value={userId} onChange={e => setUserId(e.target.value)}
+          className="w-full border border-gray-200 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+          <option value="">Choose a designer…</option>
+          {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
       </div>
+
+      {/* Step 2 — Pick requests worked on today */}
+      {userId && (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Step 2 — What did you work on today?</p>
+            {myRequests.length > 0 && (
+              <span className="text-xs text-gray-400">{selectedIds.size} selected</span>
+            )}
+          </div>
+
+          {loadingReqs && (
+            <div className="flex items-center gap-2 py-6 justify-center text-gray-400 text-sm">
+              <Loader2 size={15} className="animate-spin"/> Loading requests…
+            </div>
+          )}
+
+          {!loadingReqs && myRequests.length === 0 && (
+            <div className="text-center py-8">
+              <CheckCircle2 size={28} className="mx-auto text-green-400 mb-2"/>
+              <p className="text-sm text-gray-500 dark:text-gray-400">No active requests assigned to this designer.</p>
+            </div>
+          )}
+
+          {!loadingReqs && myRequests.length > 0 && (
+            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+              {myRequests.map(r => {
+                const selected = selectedIds.has(r.id);
+                return (
+                  <div key={r.id}
+                    className={cn(
+                      "rounded-xl border p-3 transition-all cursor-pointer select-none",
+                      selected
+                        ? "border-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 dark:border-indigo-700"
+                        : "border-gray-100 dark:border-gray-700 hover:border-gray-200 dark:hover:border-gray-600"
+                    )}
+                    onClick={() => toggleSelect(r.id)}
+                  >
+                    <div className="flex items-start gap-3">
+                      {/* Checkbox */}
+                      <div className={cn(
+                        "w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all",
+                        selected
+                          ? "bg-indigo-600 border-indigo-600"
+                          : "border-gray-300 dark:border-gray-600"
+                      )}>
+                        {selected && <Check size={11} className="text-white"/>}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{r.title}</p>
+                          <span className="text-[10px] font-mono text-gray-400">{r.refId}</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <TeamBadge team={r.requestingTeam}/>
+                          <StatusBadge status={r.status}/>
+                          {r.dueDate && (
+                            <span className={cn("text-[10px]", isOverdue(r) ? "text-red-500 font-semibold" : "text-gray-400")}>
+                              Due {format(parseISO(r.dueDate), "d MMM")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Status update dropdown — only show when selected */}
+                    {selected && (
+                      <div className="mt-3 ml-8" onClick={e => e.stopPropagation()}>
+                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Update status to</label>
+                        <select
+                          value={statusUpdates[r.id] ?? ""}
+                          onChange={e => setStatusUpdates(p => ({ ...p, [r.id]: e.target.value }))}
+                          className="w-full border border-indigo-200 dark:border-indigo-700 dark:bg-gray-800 dark:text-gray-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                        >
+                          {WORK_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Step 3 — Hours + save */}
+      {userId && selectedIds.size > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-5">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Step 3 — Wrap Up</p>
+          <div className="flex items-end gap-3">
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1.5">
+                Hours worked today <span className="font-normal text-gray-400">(optional)</span>
+              </label>
+              <input type="number" value={hours} onChange={e => setHours(e.target.value)}
+                min="0" max="24" step="0.5" placeholder="e.g. 7.5"
+                className="w-full border border-gray-200 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"/>
+            </div>
+            <button onClick={save} disabled={saving}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold rounded-xl px-5 py-2.5 text-sm transition-colors whitespace-nowrap">
+              {saving
+                ? <><Loader2 size={14} className="animate-spin"/> Saving…</>
+                : done
+                  ? "✓ Saved!"
+                  : `Save ${selectedIds.size} item${selectedIds.size > 1 ? "s" : ""}`
+              }
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
