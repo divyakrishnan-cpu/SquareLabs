@@ -49,8 +49,9 @@ const BOTTOM_NAV: NavItem[] = [
 
 export function Sidebar() {
   const pathname    = usePathname();
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const sessionUser = session?.user as SessionUser | undefined;
+  const isLoading = status === "loading";
 
   const [collapsed,  setCollapsed]  = useState(false);
   const [openGroups, setOpenGroups] = useState<string[]>(["Social", "Design Ops", "Team"]);
@@ -62,12 +63,18 @@ export function Sidebar() {
     );
   }
 
-  const visibleNav = NAV
-    .filter(g => !g.section || canAccess(sessionUser, g.section))
-    .map(g => ({ ...g, children: g.children.filter(c => !c.section || canAccess(sessionUser, c.section)) }))
-    .filter(g => g.children.length > 0);
+  // While session is loading, show all nav items to avoid flash of empty sidebar.
+  // Once loaded, filter by the user's actual permissions.
+  const visibleNav = isLoading
+    ? NAV
+    : NAV
+        .filter(g => !g.section || canAccess(sessionUser, g.section))
+        .map(g => ({ ...g, children: g.children.filter(c => !c.section || canAccess(sessionUser, c.section)) }))
+        .filter(g => g.children.length > 0);
 
-  const visibleBottom = BOTTOM_NAV.filter(i => !i.section || canAccess(sessionUser, i.section));
+  const visibleBottom = isLoading
+    ? BOTTOM_NAV
+    : BOTTOM_NAV.filter(i => !i.section || canAccess(sessionUser, i.section));
 
   const userName = sessionUser?.name ?? "User";
   const initials = userName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
