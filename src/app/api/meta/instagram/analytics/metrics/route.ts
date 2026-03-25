@@ -231,6 +231,56 @@ async function fetchInteractionTotals(
   return result;
 }
 
+// ── Follows / unfollows totals (live API, chunked) ────────────────────────
+// Not stored per-day in SocialMetricSnapshot with enough fidelity, so we always
+// fetch from the Insights API with the follows_and_unfollows breakdown.
+
+async function fetchFollowsUnfollowsTotal(
+  igId:  string,
+  since: number,
+  until: number,
+  token: string,
+): Promise<{ follows: number; unfollows: number; errors: string[] }> {
+  let totalFollows   = 0;
+  let totalUnfollows = 0;
+  let hasFollowData  = false;
+  const errors: string[] = [];
+  const chunks = chunkRange(since, until);
+
+  for (const chunk of chunks) {
+    try {
+      const url = `${META}/${igId}/insights?metric=follows_and_unfollows` +
+                  `&period=day&metric_type=total_value&breakdown=follow_type` +
+                  `&since=${chunk.since}&until=${chunk.until}&access_token=${token}`;
+      const res  = await fetch(url);
+      const data = await res.json();
+
+      if (data.error) {
+        errors.push(`[follows] ${data.error.message} (code ${data.error.code})`);
+        break;
+      }
+
+      const breakdowns = data.data?.[0]?.total_value?.breakdowns ?? [];
+      for (const bd of breakdowns) {
+        for (const r of (bd.results ?? [])) {
+          const dim = (r.dimension_values?.[0] ?? "").toUpperCase();
+          if      (dim === "FOLLOW")   { totalFollows   += r.value ?? 0; hasFollowData = true; }
+          else if (dim === "UNFOLLOW") { totalUnfollows += r.value ?? 0; hasFollowData = true; }
+        }
+      }
+      // Fallback: treat total_value.value as net follows
+      if (!hasFollowData && typeof data.data?.[0]?.total_value?.value === "number") {
+        totalFollows  += data.data[0].total_value.value;
+        hasFollowData  = true;
+      }
+    } catch (e) {
+      errors.push(`[follows] ${String(e)}`);
+    }
+  }
+
+  return { follows: totalFollows, unfollows: totalUnfollows, errors };
+}
+
 // ── Demographics ──────────────────────────────────────────────────────────
 
 async function fetchDemographics(igId: string, token: string) {
@@ -561,28 +611,40 @@ export async function GET(req: NextRequest) {
     const { errors: _e, ...interactionValues } = interactionBreakdown;
     currentTotals = { ...buildTotals(insightResult.data, media), ...interactionValues };
   } else {
-    // IMPORTANT: DB snapshots may only cover a subset of the requested range
-    // (e.g. daily sync started 5 days ago but user requested 30 days).
-    // We MUST scope interaction breakdown and media to the SAME dates as the DB rows
-    // so all metrics cover the identical time window and can be compared fairly.
+    // DB snapshots cover a subset of the requested range (daily sync has finite history).
+    // For MEDIA (posts published): use the full user-selected range — pagination handles it.
+    // For INTERACTION totals (follows/unfollows/profile views): scope to DB dates since
+    // the Insights API is limited to 30-day windows and must align with stored rows.
     const dbFirstDate = new Date(dbSnapshots[0].date);
     const dbLastDate  = new Date(dbSnapshots[dbSnapshots.length - 1].date);
     dbLastDate.setHours(23, 59, 0, 0);
     const dbSinceTs = Math.floor(dbFirstDate.getTime() / 1000);
     const dbUntilTs = Math.floor(dbLastDate.getTime()  / 1000);
 
-    const [media, interactionBreakdown] = await Promise.all([
-      fetchMediaStats(igId, token, dbFirstDate, dbLastDate),
+    const [media, interactionBreakdown, followBreakdown] = await Promise.all([
+      fetchMediaStats(igId, token, fromDate, toDate),          // ← full user-selected range
       fetchInteractionTotals(igId, dbSinceTs, dbUntilTs, token),
+      fetchFollowsUnfollowsTotal(igId, dbSinceTs, dbUntilTs, token),
     ]);
     currentMedia      = media;
-    interactionErrors = interactionBreakdown.errors;
+    interactionErrors = [...interactionBreakdown.errors, ...followBreakdown.errors];
     const { errors: _e2, ...interactionValues } = interactionBreakdown;
+
+    // Use live API follows/unfollows; fall back to DB snapshot sums if API returns 0
+    const dbFollows   = currentTotals!.follows   as number;
+    const dbUnfollows = currentTotals!.unfollows as number;
+    const liveFollows   = followBreakdown.follows   > 0 ? followBreakdown.follows   : dbFollows;
+    const liveUnfollows = followBreakdown.unfollows > 0 ? followBreakdown.unfollows : dbUnfollows;
+
     currentTotals = {
       ...currentTotals!,
       ...interactionValues,
-      ...(currentTotals!.postsPublished === 0 && media.total > 0
-        ? { postsPublished: media.total, videoPosts: media.video, staticPosts: media.image }
+      follows:        liveFollows,
+      unfollows:      liveUnfollows,
+      netFollowers:   liveFollows - liveUnfollows,
+      // Media was fetched for the FULL user-selected range, so always use it
+      ...(media.total > 0
+        ? { postsPublished: media.total, videoPosts: media.video, staticPosts: media.image + media.carousel }
         : {}),
     };
   }
