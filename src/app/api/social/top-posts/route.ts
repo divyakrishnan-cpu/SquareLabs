@@ -183,20 +183,25 @@ async function fetchInstagramPosts(
   from:  string,
   to:    string,
 ): Promise<PostPerformance[]> {
-  // Fetch media list — no nested insights here (URL-encoding breaks the syntax)
-  // IMPORTANT: must include media_product_type — Instagram returns media_type="VIDEO" for
-  // BOTH regular videos AND Reels, but Reels only support "plays" not "impressions".
-  // media_product_type will be "REEL" | "FEED" | "STORY" | "AD" etc.
-  const FIELDS = "id,media_type,media_product_type,timestamp,like_count,comments_count,permalink,thumbnail_url,media_url,caption";
+  // Fetch media list — no nested insights here (URL-encoding breaks the syntax).
+  //
+  // IMPORTANT: video_views is requested as a DIRECT MEDIA FIELD, not via the
+  // insights endpoint.  The insights endpoint's "video_views" metric fails for
+  // Reels (HTTP 400).  The direct field bypasses that restriction entirely and
+  // returns the total play/view count without needing any special period param.
+  // Similarly, like_count and comments_count are direct fields that don't hit
+  // the insights API at all.
+  const FIELDS = "id,media_type,media_product_type,timestamp,like_count,comments_count,video_views,permalink,thumbnail_url,media_url,caption";
   const MAX_POSTS = 30;
 
   type RawMedia = {
     id:                  string;
     media_type:          string;          // IMAGE | VIDEO | CAROUSEL_ALBUM
-    media_product_type?: string;          // REEL | FEED | STORY | AD  ← crucial for Reels
+    media_product_type?: string;          // REEL | FEED | STORY | AD
     timestamp:           string;
     like_count?:         number;
     comments_count?:     number;
+    video_views?:        number;          // ← direct field: total plays/views (works for Reels)
     permalink:           string;
     thumbnail_url?:      string;
     media_url?:          string;
@@ -246,13 +251,27 @@ async function fetchInstagramPosts(
     batch.forEach((m, j) => {
       const ins            = insights[j];
       const isReel         = m.media_product_type === "REEL";
-      const isVideo        = m.media_type === "VIDEO"; // regular video or reel
+      const isVideo        = m.media_type === "VIDEO"; // includes Reels
       const likes          = m.like_count     ?? 0;
       const comments       = m.comments_count ?? 0;
-      // Display type: prefer product type label for Reels, else use media_type
+
+      // video_views from the direct media field is the most reliable view count.
+      // It returns the same number Instagram shows in the app (organic + paid)
+      // without requiring any insights-API permissions or period parameters.
+      // Fall back to whatever the insights API returned if the field is absent.
+      const directViews    = m.video_views ?? 0;
+      const insightViews   = Math.max(ins.plays, ins.videoViews);
+      const finalViews     = directViews || insightViews; // prefer direct field
+
+      // For impressions, use the insights value if available; otherwise use
+      // video_views as the best proxy (same number Instagram reports in-app).
+      const finalImp       = ins.impressions || directViews;
+
+      // Display type: use product type when known, else fall back to media_type
       const displayType    = isReel ? "REEL"
         : m.media_type === "CAROUSEL_ALBUM" ? "CAROUSEL"
         : m.media_type; // IMAGE | VIDEO
+
       results.push({
         id:          m.id,
         platform:    "INSTAGRAM",
@@ -261,14 +280,14 @@ async function fetchInstagramPosts(
         thumbnail:   m.thumbnail_url || m.media_url,
         permalink:   m.permalink,
         publishedAt: m.timestamp,
-        impressions:   ins.impressions,
+        impressions:   finalImp,
         reach:         ins.reach,
         engagement:    likes + comments + ins.saves + ins.shares,
         likes,
         comments,
         saves:         ins.saves,
         shares:        ins.shares,
-        views:         (isVideo || isReel) ? Math.max(ins.plays, ins.videoViews) : 0,
+        views:         (isVideo || isReel) ? finalViews : 0,
         profileVisits: 0,
         linkClicks:    0,
       });
