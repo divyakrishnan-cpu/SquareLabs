@@ -7,7 +7,7 @@ import { useSession } from "next-auth/react";
 import {
   BarChart2, MessageSquare, CalendarDays, Settings,
   ChevronDown, ChevronRight, Share2, Menu, MapPin,
-  Sun, Moon, Clapperboard, Users, ShieldCheck, GitBranch,
+  Sun, Moon, Clapperboard, Users, ShieldCheck, GitBranch, TrendingUp,
   PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -21,10 +21,11 @@ const NAV: NavGroup[] = [
   {
     label: "Social", icon: Share2, section: "SOCIAL",
     children: [
-      { label: "Dashboard",        href: "/social/dashboard", icon: BarChart2,     section: "SOCIAL" },
-      { label: "Content Calendar", href: "/social/calendar",  icon: CalendarDays,  section: "SOCIAL" },
-      { label: "ORM — Comments",   href: "/social/orm",       icon: MessageSquare, section: "SOCIAL" },
-      { label: "GMB Ratings",      href: "/social/orm/gmb",   icon: MapPin,        section: "GMB"    },
+      { label: "Dashboard",        href: "/social/dashboard", icon: BarChart2,    section: "SOCIAL" },
+      { label: "Performance Report", href: "/social/reports", icon: TrendingUp,   section: "SOCIAL" },
+      { label: "Content Calendar", href: "/social/calendar",  icon: CalendarDays, section: "SOCIAL" },
+      { label: "ORM — Comments",   href: "/social/orm",       icon: MessageSquare,section: "SOCIAL" },
+      { label: "GMB Ratings",      href: "/social/orm/gmb",   icon: MapPin,       section: "GMB"    },
     ],
   },
   {
