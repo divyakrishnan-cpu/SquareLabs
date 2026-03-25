@@ -155,13 +155,20 @@ async function fetchIGInsights(
     result.plays       = await igFetchBest("plays");
     result.impressions = result.plays;
   } else if (isVideo) {
-    // Regular video
-    const [imp, vidViews] = await Promise.all([
+    // VIDEO media_type covers BOTH regular videos AND Reels.
+    // media_product_type is the reliable way to distinguish them, but it isn't
+    // always returned (depends on token/app permissions).  So we request ALL
+    // three video metrics in parallel and take whichever succeed:
+    //   • Regular videos → impressions + video_views work,  plays may be 0
+    //   • Reels           → plays works,  impressions + video_views return HTTP 400 → 0
+    const [imp, vidViews, playsVal] = await Promise.all([
       igFetchBest("impressions"),
       igFetchBest("video_views"),
+      igFetchBest("plays"),
     ]);
-    result.impressions = imp;
-    result.videoViews  = vidViews;
+    result.plays       = playsVal;
+    result.videoViews  = vidViews || playsVal;         // video_views for regular, plays for Reel
+    result.impressions = imp      || playsVal;         // impressions for regular, plays for Reel
   } else {
     // IMAGE or CAROUSEL_ALBUM
     result.impressions = await igFetchBest("impressions");
