@@ -89,8 +89,12 @@ async function fetchIGInsights(
 ): Promise<{ impressions: number; reach: number; saves: number; videoViews: number; plays: number; shares: number }> {
   const result = { impressions: 0, reach: 0, saves: 0, videoViews: 0, plays: 0, shares: 0 };
 
-  /** Fetch a single metric (or comma-separated group) and return parsed map. */
-  const igFetch = async (metrics: string, period?: "lifetime"): Promise<Record<string, number>> => {
+  /**
+   * Fetch a single metric and return parsed map.
+   * Always tries period=lifetime because Instagram v20 Reel metrics (especially
+   * ig_reels_aggregated_all_plays_count) require it.
+   */
+  const igFetch = async (metrics: string, period: "lifetime" | "day" | "" = "lifetime"): Promise<Record<string, number>> => {
     try {
       const periodParam = period ? `&period=${period}` : "";
       const url = `${META}/${mediaId}/insights?metric=${metrics}${periodParam}&access_token=${token}`;
@@ -98,45 +102,43 @@ async function fetchIGInsights(
       const body = await res.json() as { data?: InsightEntry[]; error?: { message?: string; code?: number } };
 
       if (!res.ok || body.error) {
-        // Log to Vercel function logs so we can diagnose permission/API issues
         console.error(
-          `[IG insights] ${metrics}${period ? " period=" + period : ""} → HTTP ${res.status}:`,
-          JSON.stringify(body.error ?? body).slice(0, 300)
+          `[IG insights] ${mediaId} ${metrics}${period ? " period=" + period : ""} → HTTP ${res.status}:`,
+          JSON.stringify(body.error).slice(0, 200)
         );
         return {};
       }
 
       const parsed = parseInsightBody(body);
 
-      // Debug: log what we actually got back (helps diagnose 0-value issues)
-      if (process.env.NODE_ENV !== "production" || Object.values(parsed).every(v => v === 0)) {
+      // Always log video-view metrics so we can see what comes back
+      if (metrics.includes("plays") || metrics.includes("views") || metrics.includes("impressions")) {
         console.log(
-          `[IG insights] ${metrics} raw:`,
-          JSON.stringify(body.data?.map(e => ({ name: e.name, tv: e.total_value, v: e.values }))).slice(0, 400)
+          `[IG insights] ${mediaId} ${metrics}(${period}):`,
+          JSON.stringify(body.data?.map(e => ({
+            name: e.name,
+            tv:   (e as any).total_value?.value,
+            v0:   (e as any).values?.[0]?.value,
+          })))
         );
       }
 
       return parsed;
     } catch (e) {
-      console.error(`[IG insights] ${metrics} exception:`, String(e));
+      console.error(`[IG insights] ${mediaId} ${metrics} exception:`, String(e));
       return {};
     }
   };
 
-  /**
-   * Fetch one metric trying BOTH period variants in parallel.
-   * Takes the first non-zero value — handles v20 (total_value, no period)
-   * and legacy (values array, period=lifetime) in one round-trip.
-   */
+  /** Try a metric with period=lifetime, then without period as fallback. */
   const igFetchBest = async (metric: string): Promise<number> => {
-    const [noPeriod, withPeriod] = await Promise.all([
-      igFetch(metric),
-      igFetch(metric, "lifetime"),
-    ]);
-    return noPeriod[metric] || withPeriod[metric] || 0;
+    const withPeriod = await igFetch(metric, "lifetime");
+    if (withPeriod[metric]) return withPeriod[metric];
+    const noPeriod = await igFetch(metric, "");
+    return noPeriod[metric] || 0;
   };
 
-  // ── Metrics 1–3: universal across all media types
+  // ── Universal metrics (work for all media types)
   const [reach, saved, shares] = await Promise.all([
     igFetchBest("reach"),
     igFetchBest("saved"),
@@ -146,29 +148,35 @@ async function fetchIGInsights(
   result.saves  = saved;
   result.shares = shares;
 
-  // ── Metric 4+: type-specific impression / view metrics
+  // ── View / play metrics — try every known variant
   const isReel  = mediaType === "REEL";
   const isVideo = mediaType === "VIDEO" || isReel;
 
-  if (isReel) {
-    // Reels → "plays" (impressions is not a valid Reel metric)
-    result.plays       = await igFetchBest("plays");
-    result.impressions = result.plays;
-  } else if (isVideo) {
-    // VIDEO media_type covers BOTH regular videos AND Reels.
-    // media_product_type is the reliable way to distinguish them, but it isn't
-    // always returned (depends on token/app permissions).  So we request ALL
-    // three video metrics in parallel and take whichever succeed:
-    //   • Regular videos → impressions + video_views work,  plays may be 0
-    //   • Reels           → plays works,  impressions + video_views return HTTP 400 → 0
-    const [imp, vidViews, playsVal] = await Promise.all([
+  if (isVideo) {
+    // Instagram v20 renamed Reel plays to ig_reels_aggregated_all_plays_count.
+    // We try both the new name AND legacy "plays" in parallel.
+    // For regular (non-Reel) videos: impressions + video_views work; Reel metrics return 400 (handled).
+    // For Reels: ig_reels_aggregated_all_plays_count + plays work; impressions/video_views return 400.
+    const [
+      aggPlays,       // ig_reels_aggregated_all_plays_count — new Reel metric (v18+)
+      legacyPlays,    // plays — legacy Reel metric (v17 and earlier, may still work)
+      imp,            // impressions — works for regular Feed video, not Reels
+      vidViews,       // video_views — works for regular Feed video, not Reels
+    ] = await Promise.all([
+      igFetchBest("ig_reels_aggregated_all_plays_count"),
+      igFetchBest("plays"),
       igFetchBest("impressions"),
       igFetchBest("video_views"),
-      igFetchBest("plays"),
     ]);
-    result.plays       = playsVal;
-    result.videoViews  = vidViews || playsVal;         // video_views for regular, plays for Reel
-    result.impressions = imp      || playsVal;         // impressions for regular, plays for Reel
+
+    // For Reels: take the Reel-specific play count (non-zero wins)
+    const reelPlays = aggPlays || legacyPlays;
+
+    result.plays       = reelPlays || vidViews;
+    result.videoViews  = reelPlays || vidViews;
+    result.impressions = reelPlays || imp || vidViews;
+
+    console.log(`[IG insights] ${mediaId} summary: aggPlays=${aggPlays} legacyPlays=${legacyPlays} imp=${imp} vidViews=${vidViews} → plays=${result.plays}`);
   } else {
     // IMAGE or CAROUSEL_ALBUM
     result.impressions = await igFetchBest("impressions");
@@ -184,23 +192,11 @@ async function fetchInstagramPosts(
   to:    string,
 ): Promise<PostPerformance[]> {
   // ── Field expansion strategy ────────────────────────────────────────────────
-  //
-  // We embed "insights.metric(plays)" directly in the media list request using
-  // Instagram's field expansion syntax.  Node.js fetch does NOT percent-encode
-  // parentheses ( ) in query strings (per WHATWG URL spec — only { } get
-  // encoded), so Instagram receives the literal string and returns plays data
-  // inline.  This completely sidesteps the /{media-id}/insights endpoint which
-  // consistently returns HTTP 400 for Reels when plays/impressions are requested
-  // as separate calls.
-  //
-  // video_views is also requested as a direct media field (backup) — it works
-  // for regular Feed videos; for Reels it may be null/0 but costs nothing extra.
-  //
-  // NOTE: We intentionally omit {name,values,total_value} subfield selectors
-  // because { } braces DO get encoded by Node.js URL parsing.  Instagram returns
-  // the default insight subfields (name + values + total_value) when no selector
-  // is given, and our insightVal() handles both shapes.
-  const FIELDS = "id,media_type,media_product_type,timestamp,like_count,comments_count,video_views,insights.metric(plays),permalink,thumbnail_url,media_url,caption";
+  // Request inline plays via field expansion AND video_views as direct field.
+  // insights.metric(plays) uses Instagram's field expansion syntax; parentheses
+  // are NOT percent-encoded by Node.js fetch (WHATWG URL spec), so Instagram
+  // receives the literal syntax and returns plays counts inline.
+  const FIELDS = "id,media_type,media_product_type,timestamp,like_count,comments_count,video_views,insights.metric(ig_reels_aggregated_all_plays_count,plays),permalink,thumbnail_url,media_url,caption";
   const MAX_POSTS = 30;
 
   type InsightDataEntry = {
@@ -276,18 +272,27 @@ async function fetchInstagramPosts(
 
       // ── View / plays count ─────────────────────────────────────────────────
       // Priority order (first non-zero wins):
-      // 1. Inline plays from field expansion in the media list call (most reliable)
-      // 2. video_views direct field (works for regular Feed videos, not Reels)
-      // 3. plays / videoViews from the separate insights API calls (last resort)
+      // 1. Inline ig_reels_aggregated_all_plays_count from field expansion (new v18+ metric)
+      // 2. Inline plays from field expansion (legacy metric)
+      // 3. video_views direct field (works for regular Feed videos, not Reels)
+      // 4. plays / videoViews from the separate insights API calls (last resort)
+      const aggPlaysEntry  = m.insights?.data?.find(d => d.name === "ig_reels_aggregated_all_plays_count");
       const playsEntry     = m.insights?.data?.find(d => d.name === "plays");
-      const inlinePlays    = playsEntry?.total_value?.value ?? playsEntry?.values?.[0]?.value ?? 0;
+      const inlineAggPlays = aggPlaysEntry?.total_value?.value ?? aggPlaysEntry?.values?.[0]?.value ?? 0;
+      const inlinePlays    = playsEntry?.total_value?.value    ?? playsEntry?.values?.[0]?.value    ?? 0;
+      const inlineViews    = inlineAggPlays || inlinePlays;
       const directViews    = m.video_views ?? 0;
       const insightViews   = Math.max(ins.plays, ins.videoViews);
-      const finalViews     = inlinePlays || directViews || insightViews;
+      const finalViews     = inlineViews || directViews || insightViews;
 
-      // For impressions: inline plays is the best proxy for Reels (Instagram
-      // removed the impressions metric for Reels; plays is what they show in-app).
-      const finalImp       = ins.impressions || inlinePlays || directViews;
+      // Debug: log what we got for this post's view metrics
+      if (isVideo || isReel) {
+        console.log(`[top-posts] ${m.id} inlineAggPlays=${inlineAggPlays} inlinePlays=${inlinePlays} directViews=${directViews} insightViews=${insightViews} → finalViews=${finalViews}`);
+      }
+
+      // For impressions: Reel play count is the best proxy (Instagram removed
+      // impressions metric for Reels in v20, plays/ag_plays is what they show in-app).
+      const finalImp       = ins.impressions || inlineViews || directViews;
 
       // Display type: use product type when known, else fall back to media_type
       const displayType    = isReel ? "REEL"
