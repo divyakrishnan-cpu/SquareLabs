@@ -54,29 +54,46 @@ async function fetchIGInsights(
 ): Promise<{ impressions: number; reach: number; saves: number; videoViews: number; plays: number; shares: number }> {
   const base = { impressions: 0, reach: 0, saves: 0, videoViews: 0, plays: 0, shares: 0 };
   try {
-    const isVideo  = mediaType === "VIDEO" || mediaType === "REEL";
-    const metrics  = [
-      "impressions", "reach", "saved", "shares",
-      ...(isVideo ? ["video_views", "plays"] : []),
-    ].join(",");
+    const isReel  = mediaType === "REEL";
+    const isVideo = mediaType === "VIDEO" || isReel;
+
+    // Reels use "plays" instead of "impressions"; request both and take whichever returns data.
+    // Instagram Graph API v20+ may return total_value.value (new format) or values[0].value (old).
+    const metrics = isReel
+      ? ["plays", "reach", "saved", "shares"]
+      : ["impressions", "reach", "saved", "shares", ...(isVideo ? ["video_views"] : [])];
 
     const res = await fetch(
-      `${META}/${mediaId}/insights?metric=${metrics}&period=lifetime&access_token=${token}`
+      `${META}/${mediaId}/insights?metric=${metrics.join(",")}&period=lifetime&access_token=${token}`
     );
     if (!res.ok) return base;
-    const json: { data?: { name: string; values?: { value: number }[] }[]; error?: unknown } = await res.json();
-    if (!json.data) return base;
+
+    const json: {
+      data?: {
+        name: string;
+        total_value?: { value: number };   // newer API format
+        values?:      { value: number }[]; // older API format
+      }[];
+      error?: { message: string; code: number };
+    } = await res.json();
+
+    if (json.error || !json.data) return base;
 
     const result = { ...base };
     for (const m of json.data) {
-      const val = m.values?.[0]?.value ?? 0;
+      // Prefer total_value (v20+ format), fall back to values[0] (legacy format)
+      const val = m.total_value?.value ?? m.values?.[0]?.value ?? 0;
       switch (m.name) {
-        case "impressions":  result.impressions = val;  break;
-        case "reach":        result.reach       = val;  break;
-        case "saved":        result.saves       = val;  break;
-        case "video_views":  result.videoViews  = val;  break;
-        case "plays":        result.plays       = val;  break;
-        case "shares":       result.shares      = val;  break;
+        case "impressions":  result.impressions = val; break;
+        case "plays":
+          result.plays       = val;
+          // Reels: treat plays as impressions (no separate impressions metric)
+          if (result.impressions === 0) result.impressions = val;
+          break;
+        case "reach":        result.reach      = val; break;
+        case "saved":        result.saves      = val; break;
+        case "video_views":  result.videoViews = val; break;
+        case "shares":       result.shares     = val; break;
       }
     }
     return result;
@@ -89,27 +106,50 @@ async function fetchInstagramPosts(
   from:  string,
   to:    string,
 ): Promise<PostPerformance[]> {
-  const FIELDS   = "id,media_type,timestamp,like_count,comments_count,permalink,thumbnail_url,media_url,caption";
-  const MAX_POSTS = 30;
-  const collected: {
-    id: string; media_type: string; timestamp: string;
-    like_count: number; comments_count: number;
-    permalink: string; thumbnail_url?: string; media_url?: string; caption?: string;
-  }[] = [];
+  // Request insights as a nested edge on each media object — much faster than N separate
+  // /insights calls, and works with both old and new Graph API response formats.
+  const INSIGHT_METRICS = "impressions,reach,saved,shares,plays,video_views";
+  const FIELDS = [
+    "id", "media_type", "timestamp", "like_count", "comments_count",
+    "permalink", "thumbnail_url", "media_url", "caption",
+    `insights.metric(${INSIGHT_METRICS}){name,values,total_value}`,
+  ].join(",");
 
+  const MAX_POSTS = 30;
+
+  type RawMedia = {
+    id:            string;
+    media_type:    string;
+    timestamp:     string;
+    like_count?:   number;
+    comments_count?: number;
+    permalink:     string;
+    thumbnail_url?: string;
+    media_url?:    string;
+    caption?:      string;
+    insights?: {
+      data?: {
+        name:         string;
+        total_value?: { value: number };   // v20+ format
+        values?:      { value: number }[]; // legacy format
+      }[];
+    };
+  };
+
+  const collected: RawMedia[] = [];
   let nextUrl: string | null =
-    `${META}/${igId}/media?fields=${FIELDS}&limit=50&access_token=${token}`;
+    `${META}/${igId}/media?fields=${encodeURIComponent(FIELDS)}&limit=50&access_token=${token}`;
 
   try {
     while (nextUrl && collected.length < MAX_POSTS) {
       const res  = await fetch(nextUrl);
-      const data: { data?: typeof collected; paging?: { next?: string }; error?: unknown } = await res.json();
+      const data: { data?: RawMedia[]; paging?: { next?: string }; error?: unknown } = await res.json();
       if ((data as any).error || !data.data?.length) break;
 
       let hitBoundary = false;
       for (const m of data.data) {
         const d = m.timestamp.split("T")[0];
-        if (d > to)   continue;  // future of range (shouldn't happen but safe)
+        if (d > to)   continue;
         if (d < from) { hitBoundary = true; break; }
         collected.push(m);
         if (collected.length >= MAX_POSTS) break;
@@ -121,41 +161,61 @@ async function fetchInstagramPosts(
 
   if (!collected.length) return [];
 
-  // Fetch per-post insights in parallel batches of 5 to avoid hammering the API
-  const BATCH    = 5;
-  const results: PostPerformance[] = [];
+  // Parse insights from nested edge; fall back to separate /insights call if missing
+  const withInsights = await Promise.all(
+    collected.map(async m => {
+      let ins = { impressions: 0, reach: 0, saves: 0, videoViews: 0, plays: 0, shares: 0 };
 
-  for (let i = 0; i < collected.length; i += BATCH) {
-    const batch   = collected.slice(i, i + BATCH);
-    const insights = await Promise.all(
-      batch.map(m => fetchIGInsights(m.id, token, m.media_type))
-    );
-    batch.forEach((m, j) => {
-      const ins     = insights[j];
-      const isVideo = m.media_type === "VIDEO" || m.media_type === "REEL";
-      results.push({
-        id:          m.id,
-        platform:    "INSTAGRAM",
-        type:        m.media_type === "CAROUSEL_ALBUM" ? "CAROUSEL" : m.media_type,
-        title:       (m.caption ?? "").slice(0, 120) || "Post",
-        thumbnail:   m.thumbnail_url || m.media_url,
-        permalink:   m.permalink,
-        publishedAt: m.timestamp,
-        impressions:   ins.impressions,
-        reach:         ins.reach,
-        engagement:    (m.like_count ?? 0) + (m.comments_count ?? 0) + ins.saves + ins.shares,
-        likes:         m.like_count    ?? 0,
-        comments:      m.comments_count ?? 0,
-        saves:         ins.saves,
-        shares:        ins.shares,
-        views:         isVideo ? Math.max(ins.plays, ins.videoViews) : 0,
-        profileVisits: 0,
-        linkClicks:    0,
-      });
-    });
-  }
+      // Try to read from the nested insights edge first
+      const insightData = m.insights?.data ?? [];
+      if (insightData.length > 0) {
+        for (const entry of insightData) {
+          const val = entry.total_value?.value ?? entry.values?.[0]?.value ?? 0;
+          switch (entry.name) {
+            case "impressions":  ins.impressions = val; break;
+            case "plays":
+              ins.plays = val;
+              if (ins.impressions === 0) ins.impressions = val; // Reels use plays as impressions
+              break;
+            case "reach":        ins.reach      = val; break;
+            case "saved":        ins.saves      = val; break;
+            case "video_views":  ins.videoViews = val; break;
+            case "shares":       ins.shares     = val; break;
+          }
+        }
+      } else {
+        // Fallback: separate /insights call (handles cases where nested edge isn't supported)
+        ins = await fetchIGInsights(m.id, token, m.media_type);
+      }
 
-  return results;
+      return { m, ins };
+    })
+  );
+
+  return withInsights.map(({ m, ins }) => {
+    const isVideo = m.media_type === "VIDEO" || m.media_type === "REEL";
+    const likes    = m.like_count     ?? 0;
+    const comments = m.comments_count ?? 0;
+    return {
+      id:          m.id,
+      platform:    "INSTAGRAM",
+      type:        m.media_type === "CAROUSEL_ALBUM" ? "CAROUSEL" : m.media_type,
+      title:       (m.caption ?? "").slice(0, 120) || "Post",
+      thumbnail:   m.thumbnail_url || m.media_url,
+      permalink:   m.permalink,
+      publishedAt: m.timestamp,
+      impressions:   ins.impressions,
+      reach:         ins.reach,
+      engagement:    likes + comments + ins.saves + ins.shares,
+      likes,
+      comments,
+      saves:         ins.saves,
+      shares:        ins.shares,
+      views:         isVideo ? Math.max(ins.plays, ins.videoViews) : 0,
+      profileVisits: 0,
+      linkClicks:    0,
+    };
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
