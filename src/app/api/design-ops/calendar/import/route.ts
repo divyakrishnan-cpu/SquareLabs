@@ -45,7 +45,6 @@ const PLATFORM_MAP: Record<string, string> = {
   "facebook":  "FACEBOOK",  "fb": "FACEBOOK",
   "linkedin":  "LINKEDIN",  "li": "LINKEDIN",
   "youtube":   "YOUTUBE",   "yt": "YOUTUBE",
-  "twitter":   "TWITTER",
   "pinterest": "PINTEREST",
 };
 

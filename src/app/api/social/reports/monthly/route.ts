@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
 
     if (!buckets.has(key)) {
       buckets.set(key, {
-        year, month, platform: s.platform,
+        year, month, platform: s.platform as SocialPlatform,
         followers: 0, follows: 0, unfollows: 0, netFollowers: 0,
         views: 0, reach: 0, impressions: 0,
         interactions: 0, likes: 0, comments: 0, saves: 0, shares: 0,

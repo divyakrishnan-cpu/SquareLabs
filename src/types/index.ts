@@ -10,7 +10,6 @@ export type SocialPlatform =
   | "FACEBOOK"
   | "LINKEDIN"
   | "YOUTUBE"
-  | "TWITTER"
   | "PINTEREST";
 
 export type CalendarItemStatus =
@@ -143,7 +142,6 @@ export const PLATFORM_LABELS: Record<SocialPlatform, string> = {
   FACEBOOK:   "Facebook",
   LINKEDIN:   "LinkedIn",
   YOUTUBE:    "YouTube",
-  TWITTER:    "X / Twitter",
   PINTEREST:  "Pinterest",
 };
 
