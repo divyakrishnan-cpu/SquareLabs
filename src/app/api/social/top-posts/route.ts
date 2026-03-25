@@ -71,12 +71,16 @@ function parseInsightBody(body: { data?: InsightEntry[]; error?: unknown }): Rec
 /**
  * Fetch per-post insights for a single Instagram media object.
  *
- * WHY two separate calls?
- * If you batch metrics like "impressions,reach,saved,shares" and even ONE metric
- * is unavailable for that media type (e.g. "impressions" on a Reel, or
- * "video_views" on an Image), the API returns an error for the ENTIRE batch.
- * Splitting into two independent calls means a failure on call 2 (type-specific
- * metrics) still leaves call 1 (universal metrics) intact.
+ * WHY individual calls per metric?
+ * Instagram Graph API v20.0 returns errors for the ENTIRE batch if any single
+ * metric is invalid for that media type.  Individual calls isolate failures so
+ * one bad metric never zeros out the rest.
+ *
+ * WHY no period=lifetime?
+ * v20.0 returns the new `total_value` response shape when no period is given.
+ * Hard-coding `period=lifetime` sometimes causes the API to return an error or
+ * an empty values array for metrics that have moved to the new format.  We
+ * accept both shapes in insightVal() so omitting the period is safe.
  */
 async function fetchIGInsights(
   mediaId:   string,
@@ -85,41 +89,82 @@ async function fetchIGInsights(
 ): Promise<{ impressions: number; reach: number; saves: number; videoViews: number; plays: number; shares: number }> {
   const result = { impressions: 0, reach: 0, saves: 0, videoViews: 0, plays: 0, shares: 0 };
 
-  const igFetch = async (metrics: string): Promise<Record<string, number>> => {
+  /** Fetch a single metric (or comma-separated group) and return parsed map. */
+  const igFetch = async (metrics: string, period?: "lifetime"): Promise<Record<string, number>> => {
     try {
-      const res = await fetch(
-        `${META}/${mediaId}/insights?metric=${metrics}&period=lifetime&access_token=${token}`
-      );
-      if (!res.ok) return {};
-      return parseInsightBody(await res.json());
-    } catch { return {}; }
+      const periodParam = period ? `&period=${period}` : "";
+      const url = `${META}/${mediaId}/insights?metric=${metrics}${periodParam}&access_token=${token}`;
+      const res  = await fetch(url);
+      const body = await res.json() as { data?: InsightEntry[]; error?: { message?: string; code?: number } };
+
+      if (!res.ok || body.error) {
+        // Log to Vercel function logs so we can diagnose permission/API issues
+        console.error(
+          `[IG insights] ${metrics}${period ? " period=" + period : ""} → HTTP ${res.status}:`,
+          JSON.stringify(body.error ?? body).slice(0, 300)
+        );
+        return {};
+      }
+
+      const parsed = parseInsightBody(body);
+
+      // Debug: log what we actually got back (helps diagnose 0-value issues)
+      if (process.env.NODE_ENV !== "production" || Object.values(parsed).every(v => v === 0)) {
+        console.log(
+          `[IG insights] ${metrics} raw:`,
+          JSON.stringify(body.data?.map(e => ({ name: e.name, tv: e.total_value, v: e.values }))).slice(0, 400)
+        );
+      }
+
+      return parsed;
+    } catch (e) {
+      console.error(`[IG insights] ${metrics} exception:`, String(e));
+      return {};
+    }
   };
 
-  // ── Call 1: Universal metrics — work for ALL media types (image/video/reel/carousel)
-  const universal = await igFetch("reach,saved,shares");
-  result.reach  = universal["reach"]  ?? 0;
-  result.saves  = universal["saved"]  ?? 0;
-  result.shares = universal["shares"] ?? 0;
+  /**
+   * Fetch one metric trying BOTH period variants in parallel.
+   * Takes the first non-zero value — handles v20 (total_value, no period)
+   * and legacy (values array, period=lifetime) in one round-trip.
+   */
+  const igFetchBest = async (metric: string): Promise<number> => {
+    const [noPeriod, withPeriod] = await Promise.all([
+      igFetch(metric),
+      igFetch(metric, "lifetime"),
+    ]);
+    return noPeriod[metric] || withPeriod[metric] || 0;
+  };
 
-  // ── Call 2: Type-specific impression metrics
-  // Reels → use "plays" (impressions is not a valid Reel metric)
-  // Videos → "impressions" + "video_views"
-  // Images / Carousels → "impressions" only
+  // ── Metrics 1–3: universal across all media types
+  const [reach, saved, shares] = await Promise.all([
+    igFetchBest("reach"),
+    igFetchBest("saved"),
+    igFetchBest("shares"),
+  ]);
+  result.reach  = reach;
+  result.saves  = saved;
+  result.shares = shares;
+
+  // ── Metric 4+: type-specific impression / view metrics
   const isReel  = mediaType === "REEL";
   const isVideo = mediaType === "VIDEO" || isReel;
 
   if (isReel) {
-    const reelMetrics = await igFetch("plays");
-    result.plays       = reelMetrics["plays"] ?? 0;
-    result.impressions = result.plays; // plays is the impressions equivalent for Reels
+    // Reels → "plays" (impressions is not a valid Reel metric)
+    result.plays       = await igFetchBest("plays");
+    result.impressions = result.plays;
   } else if (isVideo) {
-    const videoMetrics = await igFetch("impressions,video_views");
-    result.impressions = videoMetrics["impressions"]  ?? 0;
-    result.videoViews  = videoMetrics["video_views"]  ?? 0;
+    // Regular video
+    const [imp, vidViews] = await Promise.all([
+      igFetchBest("impressions"),
+      igFetchBest("video_views"),
+    ]);
+    result.impressions = imp;
+    result.videoViews  = vidViews;
   } else {
     // IMAGE or CAROUSEL_ALBUM
-    const imgMetrics = await igFetch("impressions");
-    result.impressions = imgMetrics["impressions"] ?? 0;
+    result.impressions = await igFetchBest("impressions");
   }
 
   return result;
