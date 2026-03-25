@@ -108,13 +108,18 @@ async function syncAccountForDate(
   const sinceTs  = Math.floor(dayStart.getTime() / 1000);
   const untilTs  = Math.floor(dayEnd.getTime()   / 1000);
 
-  // Fetch all metrics for this specific day in parallel
-  const [views, reach, profileViews, websiteClicks, interactions, followData, posts] = await Promise.all([
+  // Fetch all metrics for this specific day in parallel — including full engagement breakdown
+  const [views, reach, profileViews, websiteClicks, interactions,
+         likes, comments, saves, shares, followData, posts] = await Promise.all([
     fetchTotal(igId, "views",             sinceTs, untilTs, token),
     fetchReach(igId,                       sinceTs, untilTs, token),
     fetchTotal(igId, "profile_views",      sinceTs, untilTs, token),
     fetchTotal(igId, "website_clicks",     sinceTs, untilTs, token),
     fetchTotal(igId, "total_interactions", sinceTs, untilTs, token),
+    fetchTotal(igId, "likes",             sinceTs, untilTs, token),
+    fetchTotal(igId, "comments",          sinceTs, untilTs, token),
+    fetchTotal(igId, "saves",             sinceTs, untilTs, token),
+    fetchTotal(igId, "shares",            sinceTs, untilTs, token),
     fetchFollowsUnfollows(igId,            sinceTs, untilTs, token),
     fetchDayPosts(igId, token, dateStr),
   ]);
@@ -122,11 +127,12 @@ async function syncAccountForDate(
   // For backfilled days, net followers = follows - unfollows (best approximation)
   const netFollowers = followData.follows - followData.unfollows;
 
-  // Upsert — safe to re-run, will update if already exists
+  // Upsert — safe to re-run, updates existing rows with newly available metrics
   await prisma.socialMetricSnapshot.upsert({
     where:  { vertical_platform_date: { vertical, platform: "INSTAGRAM", date: new Date(dateStr) } },
     update: {
       views, reach, impressions: views, interactions,
+      likes, comments, saves, shares,
       linkClicks:       websiteClicks,
       profileVisits:    profileViews,
       follows:          followData.follows,
@@ -140,6 +146,7 @@ async function syncAccountForDate(
       vertical, platform: "INSTAGRAM", date: new Date(dateStr),
       followers:        intg.followersCount ?? 0,
       views, reach, impressions: views, interactions,
+      likes, comments, saves, shares,
       linkClicks:       websiteClicks,
       profileVisits:    profileViews,
       follows:          followData.follows,

@@ -452,6 +452,7 @@ function buildTotals(
 function snapshotsToDailySeries(
   snapshots: {
     date: Date; views: number; reach: number; interactions: number;
+    likes: number; comments: number; saves: number; shares: number;
     linkClicks: number; profileVisits: number; follows: number;
     unfollows: number; netFollowers: number; followers: number;
     postsPublished: number; videosPublished: number; staticsPublished: number;
@@ -465,6 +466,10 @@ function snapshotsToDailySeries(
     views:              toArr(s => s.views),
     reach:              toArr(s => s.reach),
     total_interactions: toArr(s => s.interactions),
+    likes:              toArr(s => s.likes),
+    comments:           toArr(s => s.comments),
+    saves:              toArr(s => s.saves),
+    shares:             toArr(s => s.shares),
     website_clicks:     toArr(s => s.linkClicks),
     profile_views:      toArr(s => s.profileVisits),
     follows:            toArr(s => s.follows),
@@ -479,8 +484,9 @@ function snapshotsToDailySeries(
 
 function buildTotalsFromSnapshots(
   snapshots: {
-    views: number; reach: number; interactions: number; linkClicks: number;
-    profileVisits: number; follows: number; unfollows: number; netFollowers: number;
+    views: number; reach: number; interactions: number;
+    likes: number; comments: number; saves: number; shares: number;
+    linkClicks: number; profileVisits: number; follows: number; unfollows: number; netFollowers: number;
     postsPublished: number; videosPublished: number; staticsPublished: number;
   }[]
 ) {
@@ -494,10 +500,11 @@ function buildTotalsFromSnapshots(
     views:               sum(s => s.views),
     reach:               sum(s => s.reach),
     contentInteractions: sum(s => s.interactions),
-    likes:               0,  // individual metrics stored in sync going forward
-    comments:            0,
-    saves:               0,
-    shares:              0,
+    // Read directly from DB — stored every night by the daily sync
+    likes:               sum(s => s.likes),
+    comments:            sum(s => s.comments),
+    saves:               sum(s => s.saves),
+    shares:              sum(s => s.shares),
     linkClicks:          sum(s => s.linkClicks),
     profileVisits:       sum(s => s.profileVisits),
     follows,
@@ -614,23 +621,22 @@ export async function GET(req: NextRequest) {
     currentTotals = { ...buildTotals(insightResult.data, media), ...interactionValues };
   } else {
     // DB snapshots cover a subset of the requested range (daily sync has finite history).
-    // For MEDIA (posts published): use the full user-selected range — pagination handles it.
-    // For INTERACTION totals (follows/unfollows/profile views): scope to DB dates since
-    // the Insights API is limited to 30-day windows and must align with stored rows.
+    // All engagement metrics (likes/comments/saves/shares/follows/unfollows) now come
+    // directly from DB — the daily sync stores them every night.
+    // For MEDIA (posts published): always use the full user-selected range via paginated API.
+    // For FOLLOWS/UNFOLLOWS: prefer live API (more accurate), fall back to DB sums.
     const dbFirstDate = new Date(dbSnapshots[0].date);
     const dbLastDate  = new Date(dbSnapshots[dbSnapshots.length - 1].date);
     dbLastDate.setHours(23, 59, 0, 0);
     const dbSinceTs = Math.floor(dbFirstDate.getTime() / 1000);
     const dbUntilTs = Math.floor(dbLastDate.getTime()  / 1000);
 
-    const [media, interactionBreakdown, followBreakdown] = await Promise.all([
+    const [media, followBreakdown] = await Promise.all([
       fetchMediaStats(igId, token, fromDate, toDate),          // ← full user-selected range
-      fetchInteractionTotals(igId, dbSinceTs, dbUntilTs, token),
       fetchFollowsUnfollowsTotal(igId, dbSinceTs, dbUntilTs, token),
     ]);
     currentMedia      = media;
-    interactionErrors = [...interactionBreakdown.errors, ...followBreakdown.errors];
-    const { errors: _e2, ...interactionValues } = interactionBreakdown;
+    interactionErrors = followBreakdown.errors;
 
     // Use live API follows/unfollows; fall back to DB snapshot sums if API returns 0
     const dbFollows   = currentTotals!.follows   as number;
@@ -640,11 +646,10 @@ export async function GET(req: NextRequest) {
 
     currentTotals = {
       ...currentTotals!,
-      ...interactionValues,
       follows:        liveFollows,
       unfollows:      liveUnfollows,
       netFollowers:   liveFollows - liveUnfollows,
-      // Media was fetched for the FULL user-selected range, so always use it
+      // Media fetched for full user range — always update post counts
       ...(media.total > 0
         ? { postsPublished: media.total, videoPosts: media.video, staticPosts: media.image + media.carousel }
         : {}),
@@ -667,18 +672,9 @@ export async function GET(req: NextRequest) {
     });
 
     if (compDbSnapshots.length > 0) {
-      // Scope to actual DB snapshot dates, same as current period fix above
-      const compDbFirst = new Date(compDbSnapshots[0].date);
-      const compDbLast  = new Date(compDbSnapshots[compDbSnapshots.length - 1].date);
-      compDbLast.setHours(23, 59, 0, 0);
-      const compInteractionBreakdown = await fetchInteractionTotals(
-        igId,
-        Math.floor(compDbFirst.getTime() / 1000),
-        Math.floor(compDbLast.getTime()  / 1000),
-        token,
-      );
+      // All engagement metrics (likes/comments/saves/shares) come straight from DB
       compDaily  = snapshotsToDailySeries(compDbSnapshots);
-      compTotals = { ...buildTotalsFromSnapshots(compDbSnapshots), ...compInteractionBreakdown };
+      compTotals = buildTotalsFromSnapshots(compDbSnapshots);
     } else {
       const [ci, cm, compInteractionBreakdown] = await Promise.all([
         fetchInsights(igId, compSince, compUntil, token),

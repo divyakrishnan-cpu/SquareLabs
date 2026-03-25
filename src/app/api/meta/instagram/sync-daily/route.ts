@@ -141,51 +141,65 @@ async function syncAccount(intg: {
   const yesterdayFollowers = yesterday?.followers ?? followersCount;
   const netFollowerChange  = followersCount - yesterdayFollowers;
 
-  // Parallel fetch of all today's metrics
-  const [views, reach, profileViews, websiteClicks, interactions, followData, posts] = await Promise.all([
+  // Parallel fetch of all today's metrics — including per-type engagement breakdown
+  // so we build a full historical record in the DB for year-over-year comparisons.
+  const [views, reach, profileViews, websiteClicks, interactions,
+         likes, comments, saves, shares, followData, posts] = await Promise.all([
     fetchTotal(igId, "views",               sinceTs, untilTs, token),
     fetchReach(igId,                         sinceTs, untilTs, token),
     fetchTotal(igId, "profile_views",        sinceTs, untilTs, token),
     fetchTotal(igId, "website_clicks",       sinceTs, untilTs, token),
     fetchTotal(igId, "total_interactions",   sinceTs, untilTs, token),
+    fetchTotal(igId, "likes",               sinceTs, untilTs, token),
+    fetchTotal(igId, "comments",            sinceTs, untilTs, token),
+    fetchTotal(igId, "saves",               sinceTs, untilTs, token),
+    fetchTotal(igId, "shares",              sinceTs, untilTs, token),
     fetchFollowsUnfollows(igId,              sinceTs, untilTs, token),
     fetchTodayPosts(igId, token, todayStr, todayStr),
   ]);
 
-  // Upsert into social_metric_snapshots
+  // Upsert into social_metric_snapshots — full engagement breakdown stored daily
   await prisma.socialMetricSnapshot.upsert({
     where:  { vertical_platform_date: { vertical, platform: "INSTAGRAM", date: new Date(todayStr) } },
     update: {
-      followers:       followersCount,
-      follows:         followData.follows,
-      unfollows:       followData.unfollows,
-      netFollowers:    netFollowerChange,
+      followers:        followersCount,
+      follows:          followData.follows,
+      unfollows:        followData.unfollows,
+      netFollowers:     netFollowerChange,
       views,
       reach,
-      impressions:     views,   // keep impressions col in sync
+      impressions:      views,
       interactions,
-      linkClicks:      websiteClicks,
-      profileVisits:   profileViews,
-      postsPublished:  posts.total,
-      videosPublished: posts.video,
+      likes,
+      comments,
+      saves,
+      shares,
+      linkClicks:       websiteClicks,
+      profileVisits:    profileViews,
+      postsPublished:   posts.total,
+      videosPublished:  posts.video,
       staticsPublished: posts.image,
     },
     create: {
       vertical,
-      platform:        "INSTAGRAM",
-      date:            new Date(todayStr),
-      followers:       followersCount,
-      follows:         followData.follows,
-      unfollows:       followData.unfollows,
-      netFollowers:    netFollowerChange,
+      platform:         "INSTAGRAM",
+      date:             new Date(todayStr),
+      followers:        followersCount,
+      follows:          followData.follows,
+      unfollows:        followData.unfollows,
+      netFollowers:     netFollowerChange,
       views,
       reach,
-      impressions:     views,
+      impressions:      views,
       interactions,
-      linkClicks:      websiteClicks,
-      profileVisits:   profileViews,
-      postsPublished:  posts.total,
-      videosPublished: posts.video,
+      likes,
+      comments,
+      saves,
+      shares,
+      linkClicks:       websiteClicks,
+      profileVisits:    profileViews,
+      postsPublished:   posts.total,
+      videosPublished:  posts.video,
       staticsPublished: posts.image,
     },
   });
@@ -194,7 +208,7 @@ async function syncAccount(intg: {
     igId, vertical, date: todayStr,
     followersCount, netFollowerChange,
     follows: followData.follows, unfollows: followData.unfollows,
-    views, reach, interactions,
+    views, reach, interactions, likes, comments, saves, shares,
   };
 }
 

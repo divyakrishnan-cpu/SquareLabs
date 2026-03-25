@@ -183,7 +183,11 @@ model SocialMetricSnapshot {
   views            Int            @default(0)
   reach            Int            @default(0)
   impressions      Int            @default(0)
-  interactions     Int            @default(0)  // likes+comments+shares+saves
+  interactions     Int            @default(0)  // total interactions (sum)
+  likes            Int            @default(0)  // per-day likes
+  comments         Int            @default(0)  // per-day comments
+  saves            Int            @default(0)  // per-day saves
+  shares           Int            @default(0)  // per-day shares
   linkClicks       Int            @default(0)
   profileVisits    Int            @default(0)
   totalContacts    Int            @default(0)
