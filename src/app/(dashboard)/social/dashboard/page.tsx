@@ -17,6 +17,7 @@ import {
   Image, AlignJustify,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ContentIntelligence } from "@/components/social/ContentIntelligence";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -787,6 +788,12 @@ export default function SocialDashboardPage() {
   // ── Available platforms (Pinterest only for Interior) ────────────────────────
   const availablePlatforms = PLATFORMS.filter(p => !p.interiorOnly || vertical === "INTERIOR");
 
+  // ── Computed date range for child components ──────────────────────────────
+  const renderFrom = data?.current?.period?.from
+    ?? (useCustom && customFrom ? customFrom : toYMD(addDays(new Date(), -preset)));
+  const renderTo   = data?.current?.period?.to
+    ?? (useCustom && customTo   ? customTo   : toYMD(new Date()));
+
   return (
     <>
       <Header title="Social Analytics" subtitle="Real-time performance across all brands and platforms" />
@@ -1165,73 +1172,12 @@ export default function SocialDashboardPage() {
             </div>
           </Card>
 
-          {/* ── Top Videos Last 7 Days + Recommendations ──────────────────── */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-            {/* Top videos (2/3 width) */}
-            <Card className="p-5 lg:col-span-2">
-              <div className="flex items-center gap-2 mb-4">
-                <Play size={14} className="text-pink-500" />
-                <h3 className="text-sm font-semibold text-gray-900">Top Videos — Last 7 Days</h3>
-              </div>
-
-              {data.topVideosLastWeek.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <Instagram size={18} className="text-gray-200 mb-2" />
-                  <p className="text-xs text-gray-400">No videos in the last 7 days</p>
-                </div>
-              ) : (
-                <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: "thin" }}>
-                  {data.topVideosLastWeek.map(v => (
-                    <div
-                      key={v.id}
-                      onClick={() => setSelectedVideo(v)}
-                      className="group relative flex-shrink-0 w-44 bg-white border border-gray-100 rounded-xl overflow-hidden cursor-pointer hover:shadow-md hover:border-gray-200 transition-all"
-                    >
-                      <div className="relative bg-gray-100 aspect-square">
-                        {v.thumbnail
-                          ? <img src={v.thumbnail} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                          : <div className="w-full h-full flex items-center justify-center"><Instagram size={24} className="text-gray-300" /></div>
-                        }
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <div className="bg-white/90 rounded-full p-2 shadow-lg"><QrCode size={15} className="text-gray-700" /></div>
-                        </div>
-                        <span className="absolute top-2 left-2 bg-black/50 text-white text-[9px] font-medium px-1.5 py-0.5 rounded-full">
-                          {v.mediaType === "VIDEO" || v.mediaType === "REEL" ? "Reel" : v.mediaType === "CAROUSEL_ALBUM" ? "Carousel" : "Image"}
-                        </span>
-                      </div>
-                      <div className="p-2.5">
-                        <p className="text-[10px] text-gray-400 mb-1">{fmtDate(v.date)}</p>
-                        <p className="text-xs text-gray-700 line-clamp-2 leading-relaxed">
-                          {v.caption ? v.caption.slice(0, 60) : "No caption"}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1.5 text-[10px] text-gray-400">
-                          <span className="flex items-center gap-0.5"><Heart size={9} className="text-rose-400" />{fmtNum(v.likes)}</span>
-                          <span className="flex items-center gap-0.5"><MessageCircle size={9} className="text-blue-400" />{fmtNum(v.comments)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-
-            {/* Recommendations card (1/3 width) */}
-            <Card className="p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Lightbulb size={14} className="text-amber-500" />
-                <h3 className="text-sm font-semibold text-gray-900">Content Tips</h3>
-              </div>
-              <div className="space-y-2.5">
-                {(RECOMMENDATIONS[vertical] ?? []).slice(0, 4).map((rec, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <Star size={10} className="text-amber-400 mt-1 shrink-0" />
-                    <p className="text-xs text-gray-600 leading-relaxed">{rec}</p>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          </div>
+          {/* ── Content Performance Intelligence ────────────────────────────── */}
+          <ContentIntelligence
+            vertical={vertical}
+            from={renderFrom}
+            to={renderTo}
+          />
 
           {/* ── Competitor Benchmark ──────────────────────────────────────── */}
           <Card className="p-5">
