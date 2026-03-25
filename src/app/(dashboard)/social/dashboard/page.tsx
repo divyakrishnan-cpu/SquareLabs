@@ -227,8 +227,11 @@ function deltaColor(pct: number): string {
 }
 
 function calcDelta(curr: number | null, prev: number | null): number | null {
-  if (curr == null || prev == null || prev === 0) return null;
-  return Math.round(((curr - prev) / prev) * 100);
+  if (curr == null || prev == null || prev <= 0) return null;
+  const pct = Math.round(((curr - prev) / prev) * 100);
+  // Suppress absurd % changes — these mean the comparison period had no real data
+  if (Math.abs(pct) > 9_999) return null;
+  return pct;
 }
 
 function addDays(date: Date, d: number): Date {
@@ -1007,6 +1010,33 @@ export default function SocialDashboardPage() {
             );
           })()}
 
+          {/* ── Comparison data availability warning ─────────────────────── */}
+          {data.comparison && (() => {
+            // Meta Insights API only reliably returns data ~60-90 days back.
+            // If comparison period end is more than 90 days before today, warn the user.
+            const compEndDate  = new Date(data.comparison.period.to);
+            const daysAgo      = Math.floor((Date.now() - compEndDate.getTime()) / 86400000);
+            if (daysAgo <= 90) return null;
+            return (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <div className="flex items-start gap-3">
+                  <span className="text-blue-500 text-lg shrink-0">ℹ️</span>
+                  <div>
+                    <p className="text-sm font-semibold text-blue-800 mb-1">
+                      Comparison period may have limited data
+                    </p>
+                    <p className="text-xs text-blue-700">
+                      The comparison period ends {fmtDate(data.comparison.period.to)} — <strong>{daysAgo} days ago</strong>.
+                      Meta&apos;s Insights API only reliably provides data for the last 60–90 days.
+                      Metrics marked <span className="font-mono bg-blue-100 px-1 rounded">—</span> had no data returned for that period.
+                      For reliable year-over-year comparison, use the <strong>Performance Hub</strong> once monthly data has been synced for both periods.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* ── Insight errors warning ────────────────────────────────────── */}
           {data.insightErrors && data.insightErrors.length > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
@@ -1114,7 +1144,10 @@ export default function SocialDashboardPage() {
                       </span>
                       {data.comparison && (
                         <span className="text-xs text-gray-300 w-20 text-right">
-                          {fmtNum(comp ?? null)}
+                          {/* Show "—" when comp is 0 and curr > 0 — means no historical data */}
+                          {(comp == null || (comp === 0 && (curr ?? 0) > 0))
+                            ? "—"
+                            : fmtNum(comp)}
                         </span>
                       )}
                       {delta !== null ? (

@@ -122,7 +122,8 @@ async function fetchInsights(
           break;
         }
         const val = data.data?.[0]?.total_value?.value;
-        if (typeof val === "number") { grandTotal += val; hasData = true; }
+        // Clamp: Meta returns -1 for unavailable/old metrics — treat as 0
+        if (typeof val === "number" && val >= 0) { grandTotal += val; hasData = true; }
       } catch (e) {
         errors.push(`[${metric}] ${String(e)}`);
       }
@@ -218,7 +219,8 @@ async function fetchInteractionTotals(
             hasError = true;
             break;
           }
-          total += data.data?.[0]?.total_value?.value ?? 0;
+          const raw = data.data?.[0]?.total_value?.value ?? 0;
+          total += Math.max(0, raw); // clamp: Meta returns -1 for very old/unavailable data
         } catch (e) {
           result.errors.push(`[${metric}] ${String(e)}`);
           hasError = true;
