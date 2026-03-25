@@ -196,6 +196,50 @@ model SocialMetricSnapshot {
   @@map("social_metric_snapshots")
 }
 
+// ── SM-01b: Monthly Social Report (manually logged aggregate per vertical) ─
+
+model SocialMonthlyReport {
+  id               String    @id @default(cuid())
+  vertical         Vertical
+  year             Int                           // e.g. 2026
+  month            Int                           // 1–12
+
+  // Audience
+  totalFollowers   Int       @default(0)         // cumulative followers at month-end
+  newFollowers     Int       @default(0)         // gained this month
+  unfollows        Int       @default(0)         // lost this month
+  netFollowers     Int       @default(0)         // = newFollowers - unfollows
+
+  // Reach & visibility
+  totalViews       Int       @default(0)
+  totalReach       Int       @default(0)
+  totalImpressions Int       @default(0)
+
+  // Engagement
+  interactions     Int       @default(0)         // likes + comments + shares + saves
+  linkClicks       Int       @default(0)
+  profileVisits    Int       @default(0)
+  totalContacts    Int       @default(0)
+
+  // Publishing
+  postsPublished   Int       @default(0)
+  videosPublished  Int       @default(0)
+  staticsPublished Int       @default(0)
+
+  // Per-platform JSON breakdown (optional)
+  // [{ platform: "INSTAGRAM", followers, reach, interactions, posts, videos, statics }]
+  platformBreakdown Json?
+
+  notes            String?   @db.Text
+  enteredById      String?
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([vertical, year, month])
+  @@map("social_monthly_reports")
+}
+
 // ── SM-02: Competitor Configuration ───────────────────────────────────────
 
 model Competitor {
