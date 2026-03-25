@@ -177,19 +177,23 @@ async function fetchInstagramPosts(
   to:    string,
 ): Promise<PostPerformance[]> {
   // Fetch media list — no nested insights here (URL-encoding breaks the syntax)
-  const FIELDS = "id,media_type,timestamp,like_count,comments_count,permalink,thumbnail_url,media_url,caption";
+  // IMPORTANT: must include media_product_type — Instagram returns media_type="VIDEO" for
+  // BOTH regular videos AND Reels, but Reels only support "plays" not "impressions".
+  // media_product_type will be "REEL" | "FEED" | "STORY" | "AD" etc.
+  const FIELDS = "id,media_type,media_product_type,timestamp,like_count,comments_count,permalink,thumbnail_url,media_url,caption";
   const MAX_POSTS = 30;
 
   type RawMedia = {
-    id:              string;
-    media_type:      string;
-    timestamp:       string;
-    like_count?:     number;
-    comments_count?: number;
-    permalink:       string;
-    thumbnail_url?:  string;
-    media_url?:      string;
-    caption?:        string;
+    id:                  string;
+    media_type:          string;          // IMAGE | VIDEO | CAROUSEL_ALBUM
+    media_product_type?: string;          // REEL | FEED | STORY | AD  ← crucial for Reels
+    timestamp:           string;
+    like_count?:         number;
+    comments_count?:     number;
+    permalink:           string;
+    thumbnail_url?:      string;
+    media_url?:          string;
+    caption?:            string;
   };
 
   const collected: RawMedia[] = [];
@@ -224,17 +228,28 @@ async function fetchInstagramPosts(
   for (let i = 0; i < collected.length; i += BATCH) {
     const batch   = collected.slice(i, i + BATCH);
     const insights = await Promise.all(
-      batch.map(m => fetchIGInsights(m.id, token, m.media_type))
+      batch.map(m => {
+        // Instagram returns media_type="VIDEO" for BOTH Reels and regular videos.
+        // Use media_product_type to correctly identify Reels so we request "plays"
+        // instead of "impressions" (which the API rejects for Reels with HTTP 400).
+        const effectiveType = m.media_product_type === "REEL" ? "REEL" : m.media_type;
+        return fetchIGInsights(m.id, token, effectiveType);
+      })
     );
     batch.forEach((m, j) => {
-      const ins     = insights[j];
-      const isVideo = m.media_type === "VIDEO" || m.media_type === "REEL";
-      const likes    = m.like_count     ?? 0;
-      const comments = m.comments_count ?? 0;
+      const ins            = insights[j];
+      const isReel         = m.media_product_type === "REEL";
+      const isVideo        = m.media_type === "VIDEO"; // regular video or reel
+      const likes          = m.like_count     ?? 0;
+      const comments       = m.comments_count ?? 0;
+      // Display type: prefer product type label for Reels, else use media_type
+      const displayType    = isReel ? "REEL"
+        : m.media_type === "CAROUSEL_ALBUM" ? "CAROUSEL"
+        : m.media_type; // IMAGE | VIDEO
       results.push({
         id:          m.id,
         platform:    "INSTAGRAM",
-        type:        m.media_type === "CAROUSEL_ALBUM" ? "CAROUSEL" : m.media_type,
+        type:        displayType,
         title:       (m.caption ?? "").slice(0, 120) || "Post",
         thumbnail:   m.thumbnail_url || m.media_url,
         permalink:   m.permalink,
@@ -246,7 +261,7 @@ async function fetchInstagramPosts(
         comments,
         saves:         ins.saves,
         shares:        ins.shares,
-        views:         isVideo ? Math.max(ins.plays, ins.videoViews) : 0,
+        views:         (isVideo || isReel) ? Math.max(ins.plays, ins.videoViews) : 0,
         profileVisits: 0,
         linkClicks:    0,
       });
