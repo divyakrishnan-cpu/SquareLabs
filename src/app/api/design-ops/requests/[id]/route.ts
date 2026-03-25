@@ -17,9 +17,17 @@ export async function GET(
   const request = await (prisma as any).designRequest.findUnique({
     where: { id: params.id },
     include: {
-      requestedBy: { select: { id: true, name: true, email: true } },
-      assignedTo:  { select: { id: true, name: true, email: true } },
-      notes:       { orderBy: { createdAt: "asc" } },
+      requestedBy:  { select: { id: true, name: true, email: true } },
+      assignedTo:   { select: { id: true, name: true, email: true } },
+      notes:        { orderBy: { createdAt: "asc" } },
+      pocs:         {
+        include: { user: { select: { id: true, name: true, email: true } } },
+        orderBy: { addedAt: "asc" },
+      },
+      reviewCycles: {
+        include: { reviewedBy: { select: { id: true, name: true } } },
+        orderBy: { createdAt: "asc" },
+      },
     },
   });
 
@@ -28,7 +36,7 @@ export async function GET(
 }
 
 // ── PATCH /api/design-ops/requests/[id] ───────────────────────────────────
-// Handles: assign, status update, add note, edit fields
+// Handles: assign, status update, add note, edit fields, POC management
 
 export async function PATCH(
   req: Request,
@@ -39,6 +47,7 @@ export async function PATCH(
 
   const body   = await req.json();
   const now    = new Date();
+  const userId = (session.user as any).id ?? null;
 
   // Load current request
   const current = await (prisma as any).designRequest.findUnique({
@@ -49,38 +58,79 @@ export async function PATCH(
   const update: Record<string, unknown> = {};
   const notes: string[] = [];
 
-  // Status transition
+  // ── Status transitions ─────────────────────────────────────────────────
   if (body.status && body.status !== current.status) {
     update.status = body.status;
     switch (body.status) {
+
       case "ASSIGNED":
         update.assignedAt = now;
         if (body.assignedToId) update.assignedToId = body.assignedToId;
         notes.push(`Status → Assigned to ${body.assigneeName ?? "designer"}.`);
         break;
+
       case "IN_PROGRESS":
         update.startedAt = update.startedAt ?? now;
         notes.push("Status → In Progress.");
         break;
+
+      // ── New: Designer marks their work done ─────────────────────────────
+      case "DESIGNER_DONE":
+        update.designerDoneAt = now;
+        notes.push("Designer marked work as done — awaiting review by POC(s).");
+        break;
+
+      // ── New: POC picks up for review ─────────────────────────────────────
+      case "IN_REVIEW":
+        update.reviewAt = update.reviewAt ?? now; // keep first review timestamp
+        notes.push("Status → In Review.");
+        break;
+
+      // ── New: POC requested changes ───────────────────────────────────────
+      case "CHANGES_REQUESTED":
+        update.changesRequestedAt = now;
+        update.reviewCycleCount   = (current.reviewCycleCount ?? 0) + 1;
+        notes.push(`Changes requested (cycle ${(current.reviewCycleCount ?? 0) + 1}): ${body.reviewNote ?? "See review notes."}`);
+        break;
+
+      // ── New: POC approved ────────────────────────────────────────────────
+      case "APPROVED":
+        update.approvedAt = now;
+        notes.push("Work approved by reviewer.");
+        break;
+
+      // ── New: Fully signed off ─────────────────────────────────────────────
+      case "FINAL_DONE": {
+        update.finalDoneAt = now;
+        const start   = current.submittedAt ?? now;
+        const tatHrs  = (now.getTime() - new Date(start).getTime()) / 3_600_000;
+        update.tatHours = Math.round(tatHrs * 10) / 10;
+        notes.push(`Final Done ✅ — TAT: ${update.tatHours}h.`);
+        break;
+      }
+
+      // ── Legacy statuses ──────────────────────────────────────────────────
       case "REVIEW":
         update.reviewAt = now;
         notes.push("Status → Sent for Review.");
         break;
+
       case "DELIVERED": {
         update.deliveredAt = now;
-        const start = current.submittedAt ?? now;
-        const tatHours = (now.getTime() - new Date(start).getTime()) / 3_600_000;
-        update.tatHours = Math.round(tatHours * 10) / 10;
+        const start  = current.submittedAt ?? now;
+        const tatHrs = (now.getTime() - new Date(start).getTime()) / 3_600_000;
+        update.tatHours = Math.round(tatHrs * 10) / 10;
         notes.push(`Status → Delivered. TAT: ${update.tatHours}h.`);
         break;
       }
+
       case "CANCELLED":
         notes.push("Request cancelled.");
         break;
     }
   }
 
-  // Assignment (can be done without full status change)
+  // ── Assignment ──────────────────────────────────────────────────────────
   if (body.assignedToId && body.assignedToId !== current.assignedToId) {
     update.assignedToId = body.assignedToId;
     if (!update.assignedAt) update.assignedAt = now;
@@ -88,7 +138,7 @@ export async function PATCH(
     notes.push(`Assigned to ${body.assigneeName ?? body.assignedToId}.`);
   }
 
-  // Revision request
+  // ── Legacy revision request ─────────────────────────────────────────────
   if (body.revisionNote) {
     update.revisionCount = (current.revisionCount ?? 0) + 1;
     update.revisionNote  = body.revisionNote;
@@ -96,7 +146,7 @@ export async function PATCH(
     notes.push(`Revision requested: ${body.revisionNote}`);
   }
 
-  // Field updates
+  // ── Field updates ───────────────────────────────────────────────────────
   if (body.title)          update.title          = body.title;
   if (body.brief)          update.brief          = body.brief;
   if (body.priority)       update.priority       = body.priority;
@@ -107,12 +157,14 @@ export async function PATCH(
     where: { id: params.id },
     data:  update,
     include: {
-      requestedBy: { select: { id: true, name: true } },
-      assignedTo:  { select: { id: true, name: true } },
+      requestedBy:  { select: { id: true, name: true } },
+      assignedTo:   { select: { id: true, name: true } },
+      pocs:         { include: { user: { select: { id: true, name: true } } } },
+      reviewCycles: { include: { reviewedBy: { select: { id: true, name: true } } }, orderBy: { createdAt: "asc" } },
     },
   });
 
-  // Add all system notes
+  // Add system notes
   for (const note of notes) {
     await (prisma as any).designRequestNote.create({
       data: { requestId: params.id, body: note, isSystem: true },
@@ -122,12 +174,7 @@ export async function PATCH(
   // Add user note if provided
   if (body.note) {
     await (prisma as any).designRequestNote.create({
-      data: {
-        requestId: params.id,
-        body:      body.note,
-        isSystem:  false,
-        authorId:  (session.user as any).id ?? null,
-      },
+      data: { requestId: params.id, body: body.note, isSystem: false, authorId: userId },
     });
   }
 

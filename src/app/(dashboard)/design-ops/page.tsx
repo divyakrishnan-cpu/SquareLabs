@@ -8,6 +8,8 @@ import {
   Filter, ChevronDown, X, Edit2, Eye, Loader2, ArrowUpRight, Check,
   Inbox, Users, Zap, Timer, Target, FileText,
   Download, Upload, FileUp, CheckCheck, SkipForward, XCircle,
+  ThumbsUp, ThumbsDown, UserPlus, UserCheck, Milestone, MessageSquare,
+  ChevronRight, BadgeCheck, RotateCcw, ShieldCheck, Flag,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -39,17 +41,51 @@ const REQUESTING_TEAMS: Record<string, { label: string; color: string; group: st
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  NEW:         "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300",
-  ASSIGNED:    "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  IN_PROGRESS: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400",
-  REVIEW:      "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-  DELIVERED:   "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-  CANCELLED:   "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+  NEW:               "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300",
+  ASSIGNED:          "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  IN_PROGRESS:       "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400",
+  DESIGNER_DONE:     "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400",
+  IN_REVIEW:         "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  CHANGES_REQUESTED: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
+  APPROVED:          "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400",
+  FINAL_DONE:        "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+  // Legacy
+  REVIEW:            "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  DELIVERED:         "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+  CANCELLED:         "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  NEW: "New", ASSIGNED: "Assigned", IN_PROGRESS: "In Progress",
-  REVIEW: "In Review", DELIVERED: "Delivered", CANCELLED: "Cancelled",
+  NEW:               "New",
+  ASSIGNED:          "Assigned",
+  IN_PROGRESS:       "In Progress",
+  DESIGNER_DONE:     "Designer Done",
+  IN_REVIEW:         "In Review",
+  CHANGES_REQUESTED: "Changes Requested",
+  APPROVED:          "Approved",
+  FINAL_DONE:        "Final Done ✅",
+  REVIEW:            "In Review",
+  DELIVERED:         "Delivered",
+  CANCELLED:         "Cancelled",
+};
+
+// Ordered workflow steps for the progress stepper
+const WORKFLOW_STEPS = [
+  { key: "NEW",               label: "Submitted",         icon: FileText },
+  { key: "ASSIGNED",          label: "Assigned",          icon: UserCheck },
+  { key: "IN_PROGRESS",       label: "In Progress",       icon: Zap },
+  { key: "DESIGNER_DONE",     label: "Designer Done",     icon: CheckCheck },
+  { key: "IN_REVIEW",         label: "In Review",         icon: Eye },
+  { key: "CHANGES_REQUESTED", label: "Changes Requested", icon: RotateCcw },
+  { key: "APPROVED",          label: "Approved",          icon: ThumbsUp },
+  { key: "FINAL_DONE",        label: "Final Done",        icon: BadgeCheck },
+];
+
+const POC_ROLE_LABELS: Record<string, string> = {
+  DESIGN: "Design POC", SOCIAL: "Social POC", OTHER: "POC",
+};
+const POC_ROLE_COLORS: Record<string, string> = {
+  DESIGN: "bg-purple-100 text-purple-700", SOCIAL: "bg-green-100 text-green-700", OTHER: "bg-gray-100 text-gray-600",
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -68,14 +104,46 @@ const PIE_PALETTE = ["#6366f1","#3b82f6","#f59e0b","#10b981","#ef4444","#8b5cf6"
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
+interface DesignPOC {
+  id: string;
+  userId: string;
+  role: "DESIGN" | "SOCIAL" | "OTHER";
+  addedAt: string;
+  user: { id: string; name: string; email: string; department?: string };
+}
+
+interface DesignReviewCycle {
+  id: string;
+  reviewedById: string;
+  action: "APPROVED" | "CHANGES_REQUESTED";
+  note?: string;
+  cycleNumber: number;
+  createdAt: string;
+  reviewedBy: { id: string; name: string };
+}
+
+interface DesignNote {
+  id: string; body: string; isSystem: boolean; authorId?: string; createdAt: string;
+}
+
 interface DesignReq {
   id: string; refId: string; title: string; brief: string;
   type: string; requestingTeam: string; requesterName?: string; subTeam?: string;
   priority: string; status: string; dueDate?: string;
-  submittedAt: string; deliveredAt?: string; tatHours?: number;
-  assignedTo?: { name: string } | null;
-  requestedBy?: { name: string } | null;
+  submittedAt: string;
+  designerDoneAt?: string;
+  changesRequestedAt?: string;
+  approvedAt?: string;
+  finalDoneAt?: string;
+  deliveredAt?: string;
+  tatHours?: number;
+  reviewCycleCount?: number;
+  assignedTo?: { id: string; name: string } | null;
+  requestedBy?: { id: string; name: string } | null;
   revisionCount: number;
+  pocs?: DesignPOC[];
+  reviewCycles?: DesignReviewCycle[];
+  notes?: DesignNote[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -94,9 +162,11 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+const TERMINAL_STATUSES = ["DELIVERED", "FINAL_DONE", "CANCELLED", "APPROVED"];
+
 function isOverdue(req: DesignReq) {
   if (!req.dueDate) return false;
-  if (req.status === "DELIVERED" || req.status === "CANCELLED") return false;
+  if (TERMINAL_STATUSES.includes(req.status)) return false;
   return isBefore(parseISO(req.dueDate), new Date());
 }
 
@@ -122,9 +192,10 @@ function DesignHubInner() {
   const params    = useSearchParams();
   const activeTab = params.get("tab") ?? "overview";
 
-  const [requests, setRequests] = useState<DesignReq[]>([]);
-  const [loading,  setLoading]  = useState(true);
-  const [showNew,  setShowNew]  = useState(false);
+  const [requests,       setRequests]       = useState<DesignReq[]>([]);
+  const [loading,        setLoading]        = useState(true);
+  const [showNew,        setShowNew]        = useState(false);
+  const [selectedReqId,  setSelectedReqId]  = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -191,12 +262,20 @@ function DesignHubInner() {
       {/* Tab content */}
       <div className="p-6">
         {activeTab === "overview"  && <OverviewTab  requests={requests} loading={loading} onRefresh={load}/>}
-        {activeTab === "requests"  && <RequestsTab  requests={requests} loading={loading} onRefresh={load} onNew={() => setShowNew(true)}/>}
+        {activeTab === "requests"  && <RequestsTab  requests={requests} loading={loading} onRefresh={load} onNew={() => setShowNew(true)} onSelect={setSelectedReqId}/>}
         {activeTab === "calendar"  && <CalendarTab/>}
-        {activeTab === "my-work"   && <MyWorkTab/>}
+        {activeTab === "my-work"   && <MyWorkTab onSelect={setSelectedReqId}/>}
       </div>
 
       {showNew && <NewRequestModal onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); load(); }}/>}
+
+      {selectedReqId && (
+        <RequestDetailDrawer
+          requestId={selectedReqId}
+          onClose={() => setSelectedReqId(null)}
+          onUpdated={() => { load(); }}
+        />
+      )}
     </div>
   );
 }
@@ -386,8 +465,9 @@ function EmptyChart() {
 
 // ── REQUESTS TAB ──────────────────────────────────────────────────────────
 
-function RequestsTab({ requests, loading, onRefresh, onNew }: {
+function RequestsTab({ requests, loading, onRefresh, onNew, onSelect }: {
   requests: DesignReq[]; loading: boolean; onRefresh: () => void; onNew: () => void;
+  onSelect: (id: string) => void;
 }) {
   const [search,      setSearch]      = useState("");
   const [filterTeam,  setFilterTeam]  = useState("all");
@@ -472,13 +552,13 @@ function RequestsTab({ requests, loading, onRefresh, onNew }: {
             <tr className="border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
               <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wide">Ref</th>
               <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wide">Title</th>
-              <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wide">Requesting Team</th>
-              <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wide">Requested By</th>
+              <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wide">Team</th>
               <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wide">Type</th>
-              <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wide">Priority</th>
               <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wide">Due</th>
-              <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wide">Assigned To</th>
+              <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wide">Designer</th>
+              <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wide">POCs</th>
               <th className="text-left px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wide">Status</th>
+              <th className="px-4 py-3"/>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -490,31 +570,50 @@ function RequestsTab({ requests, loading, onRefresh, onNew }: {
             )}
             {!loading && filtered.map(r => {
               const overdue = isOverdue(r);
+              const pocs    = r.pocs ?? [];
+              const cycles  = r.reviewCycleCount ?? 0;
               return (
-                <tr key={r.id} className={cn("hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors", overdue && "bg-red-50/40 dark:bg-red-900/10")}>
+                <tr key={r.id}
+                  onClick={() => onSelect(r.id)}
+                  className={cn(
+                    "hover:bg-indigo-50/40 dark:hover:bg-indigo-900/10 transition-colors cursor-pointer",
+                    overdue && "bg-red-50/40 dark:bg-red-900/10"
+                  )}
+                >
                   <td className="px-4 py-3 font-mono text-xs text-gray-400">{r.refId}</td>
-                  <td className="px-4 py-3 max-w-[240px]">
+                  <td className="px-4 py-3 max-w-[220px]">
                     <p className="font-medium text-gray-800 dark:text-gray-200 truncate">{r.title}</p>
-                    {r.revisionCount > 0 && <span className="text-[10px] text-amber-600">↻ {r.revisionCount} revision{r.revisionCount > 1 ? "s" : ""}</span>}
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {r.revisionCount > 0 && <span className="text-[10px] text-amber-600">↻ {r.revisionCount} rev</span>}
+                      {cycles > 0 && <span className="text-[10px] text-orange-500">🔄 {cycles} review{cycles > 1 ? "s" : ""}</span>}
+                    </div>
                   </td>
                   <td className="px-4 py-3"><TeamBadge team={r.requestingTeam}/></td>
-                  <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">
-                    {r.requesterName ?? r.requestedBy?.name ?? "—"}
-                  </td>
                   <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-300">{TYPE_LABELS[r.type] ?? r.type}</td>
-                  <td className={cn("px-4 py-3 text-xs font-semibold", PRIORITY_COLORS[r.priority])}>{r.priority}</td>
                   <td className="px-4 py-3 text-xs">
                     {r.dueDate
                       ? <span className={cn(overdue ? "text-red-500 font-semibold" : "text-gray-500 dark:text-gray-400")}>
-                          {format(parseISO(r.dueDate), "d MMM")}
-                          {overdue && " ⚠️"}
+                          {format(parseISO(r.dueDate), "d MMM")}{overdue && " ⚠️"}
                         </span>
                       : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">
                     {r.assignedTo?.name ?? <span className="text-gray-300 dark:text-gray-600">Unassigned</span>}
                   </td>
+                  <td className="px-4 py-3">
+                    {pocs.length === 0
+                      ? <span className="text-[10px] text-gray-300">None</span>
+                      : <div className="flex flex-wrap gap-1">
+                          {pocs.slice(0, 2).map(p => (
+                            <span key={p.id} className={cn("text-[10px] font-semibold px-1.5 py-0.5 rounded-full", POC_ROLE_COLORS[p.role])}>
+                              {p.user.name.split(" ")[0]}
+                            </span>
+                          ))}
+                          {pocs.length > 2 && <span className="text-[10px] text-gray-400">+{pocs.length - 2}</span>}
+                        </div>}
+                  </td>
                   <td className="px-4 py-3"><StatusBadge status={r.status}/></td>
+                  <td className="px-4 py-3 text-gray-300 dark:text-gray-600"><ChevronRight size={14}/></td>
                 </tr>
               );
             })}
@@ -702,7 +801,7 @@ function CalendarTab() {
 
 // ── MY WORK TAB ───────────────────────────────────────────────────────────
 
-function MyWorkTab() {
+function MyWorkTab({ onSelect }: { onSelect: (id: string) => void }) {
   const [users,        setUsers]        = useState<{id:string;name:string}[]>([]);
   const [userId,       setUserId]       = useState("");
   const [myRequests,   setMyRequests]   = useState<DesignReq[]>([]);
@@ -731,10 +830,10 @@ function MyWorkTab() {
     fetch(`/api/design-ops/requests?assignedToId=${userId}`)
       .then(r => r.json())
       .then(data => {
-        // Show only active (not delivered/cancelled)
+        // Show active requests (not fully complete or cancelled)
         setMyRequests(
           (Array.isArray(data) ? data : [])
-            .filter((r: DesignReq) => !["DELIVERED","CANCELLED"].includes(r.status))
+            .filter((r: DesignReq) => !["DELIVERED","FINAL_DONE","CANCELLED","APPROVED"].includes(r.status))
         );
         setSelectedIds(new Set());
         setStatusUpdates({});
@@ -795,16 +894,17 @@ function MyWorkTab() {
     const fresh = await fetch(`/api/design-ops/requests?assignedToId=${userId}`).then(r => r.json());
     setMyRequests(
       (Array.isArray(fresh) ? fresh : [])
-        .filter((r: DesignReq) => !["DELIVERED","CANCELLED"].includes(r.status))
+        .filter((r: DesignReq) => !["DELIVERED","FINAL_DONE","CANCELLED","APPROVED"].includes(r.status))
     );
     setTimeout(() => setDone(false), 3000);
   }
 
   const WORK_STATUSES = [
-    { value: "", label: "No change" },
-    { value: "IN_PROGRESS", label: "Still in progress" },
-    { value: "REVIEW", label: "Sent for review" },
-    { value: "DELIVERED", label: "Delivered ✓" },
+    { value: "",              label: "No change" },
+    { value: "IN_PROGRESS",   label: "Still in progress" },
+    { value: "DESIGNER_DONE", label: "Done — ready for review ✓" },
+    { value: "IN_REVIEW",     label: "Sent for review" },
+    { value: "FINAL_DONE",    label: "Final Done ✅" },
   ];
 
   return (
@@ -884,17 +984,25 @@ function MyWorkTab() {
                       </div>
                     </div>
 
-                    {/* Status update dropdown — only show when selected */}
+                    {/* Status update dropdown + View details — only show when selected */}
                     {selected && (
-                      <div className="mt-3 ml-8" onClick={e => e.stopPropagation()}>
-                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Update status to</label>
-                        <select
-                          value={statusUpdates[r.id] ?? ""}
-                          onChange={e => setStatusUpdates(p => ({ ...p, [r.id]: e.target.value }))}
-                          className="w-full border border-indigo-200 dark:border-indigo-700 dark:bg-gray-800 dark:text-gray-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                      <div className="mt-3 ml-8 space-y-2" onClick={e => e.stopPropagation()}>
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Update status to</label>
+                          <select
+                            value={statusUpdates[r.id] ?? ""}
+                            onChange={e => setStatusUpdates(p => ({ ...p, [r.id]: e.target.value }))}
+                            className="w-full border border-indigo-200 dark:border-indigo-700 dark:bg-gray-800 dark:text-gray-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                          >
+                            {WORK_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                          </select>
+                        </div>
+                        <button
+                          onClick={() => onSelect(r.id)}
+                          className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
                         >
-                          {WORK_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                        </select>
+                          <Eye size={11}/> View full details, POCs &amp; review history
+                        </button>
                       </div>
                     )}
                   </div>
@@ -1069,6 +1177,417 @@ function NewRequestModal({ onClose, onSaved }: { onClose: () => void; onSaved: (
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// ── REQUEST DETAIL DRAWER ─────────────────────────────────────────────────
+// Side drawer that shows full request details, workflow progress, POC
+// management, and review actions (approve / request changes).
+
+function RequestDetailDrawer({
+  requestId,
+  onClose,
+  onUpdated,
+}: {
+  requestId: string;
+  onClose: () => void;
+  onUpdated: () => void;
+}) {
+  const [req,          setReq]          = useState<DesignReq | null>(null);
+  const [loading,      setLoading]      = useState(true);
+  const [allUsers,     setAllUsers]     = useState<{id:string;name:string;department?:string}[]>([]);
+  const [pocUserId,    setPocUserId]    = useState("");
+  const [pocRole,      setPocRole]      = useState<"DESIGN"|"SOCIAL"|"OTHER">("SOCIAL");
+  const [addingPOC,    setAddingPOC]    = useState(false);
+  const [reviewNote,   setReviewNote]   = useState("");
+  const [submitting,   setSubmitting]   = useState(false);
+  const [statusAction, setStatusAction] = useState("");
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+
+  const fetchReq = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/design-ops/requests/${requestId}`);
+      if (res.ok) setReq(await res.json());
+    } catch {}
+    setLoading(false);
+  }, [requestId]);
+
+  useEffect(() => { fetchReq(); }, [fetchReq]);
+
+  useEffect(() => {
+    fetch("/api/team").then(r => r.json()).then(data => {
+      setAllUsers(Array.isArray(data) ? data : []);
+    }).catch(() => {});
+  }, []);
+
+  async function handleReview(action: "APPROVED" | "CHANGES_REQUESTED") {
+    if (!req) return;
+    setSubmitting(true);
+    await fetch(`/api/design-ops/requests/${requestId}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, note: reviewNote || undefined }),
+    });
+    setReviewNote("");
+    await fetchReq();
+    onUpdated();
+    setSubmitting(false);
+  }
+
+  async function handleAddPOC() {
+    if (!pocUserId) return;
+    setAddingPOC(true);
+    await fetch(`/api/design-ops/requests/${requestId}/pocs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: pocUserId, role: pocRole }),
+    });
+    setPocUserId("");
+    await fetchReq();
+    onUpdated();
+    setAddingPOC(false);
+  }
+
+  async function handleRemovePOC(userId: string) {
+    await fetch(`/api/design-ops/requests/${requestId}/pocs`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+    await fetchReq();
+    onUpdated();
+  }
+
+  async function handleStatusUpdate() {
+    if (!statusAction) return;
+    setUpdatingStatus(true);
+    await fetch(`/api/design-ops/requests/${requestId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: statusAction }),
+    });
+    setStatusAction("");
+    await fetchReq();
+    onUpdated();
+    setUpdatingStatus(false);
+  }
+
+  // Determine which workflow step is current
+  const stepIndex = req
+    ? WORKFLOW_STEPS.findIndex(s => s.key === req.status)
+    : -1;
+
+  const existingPOCIds = new Set((req?.pocs ?? []).map(p => p.userId));
+  const availableUsers = allUsers.filter(u => !existingPOCIds.has(u.id));
+
+  // Which status transitions are valid from current status
+  const validNextStatuses: Record<string, string[]> = {
+    NEW:               ["ASSIGNED", "CANCELLED"],
+    ASSIGNED:          ["IN_PROGRESS", "CANCELLED"],
+    IN_PROGRESS:       ["DESIGNER_DONE", "CANCELLED"],
+    DESIGNER_DONE:     ["IN_REVIEW", "IN_PROGRESS"],
+    IN_REVIEW:         ["APPROVED", "CHANGES_REQUESTED"],
+    CHANGES_REQUESTED: ["IN_PROGRESS"],
+    APPROVED:          ["FINAL_DONE"],
+    FINAL_DONE:        [],
+    REVIEW:            ["DELIVERED", "CANCELLED"],
+    DELIVERED:         [],
+    CANCELLED:         [],
+  };
+
+  const nextStatuses = req ? (validNextStatuses[req.status] ?? []) : [];
+
+  return (
+    <div className="fixed inset-0 z-50 flex">
+      {/* Backdrop */}
+      <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={onClose}/>
+
+      {/* Drawer */}
+      <div className="w-full max-w-2xl bg-white dark:bg-gray-900 h-full overflow-y-auto shadow-2xl flex flex-col">
+
+        {/* Header */}
+        <div className="flex items-start justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-900 z-10">
+          <div className="flex-1 min-w-0 pr-4">
+            {loading ? (
+              <div className="h-5 w-48 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"/>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-mono text-xs text-gray-400">{req?.refId}</span>
+                  {req && <StatusBadge status={req.status}/>}
+                </div>
+                <h2 className="text-base font-bold text-gray-900 dark:text-white leading-tight">{req?.title}</h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  {req && REQUESTING_TEAMS[req.requestingTeam]?.label} · {req && TYPE_LABELS[req.type]}
+                  {req?.assignedTo && <> · <span className="text-indigo-600 dark:text-indigo-400">{req.assignedTo.name}</span></>}
+                </p>
+              </>
+            )}
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 shrink-0">
+            <X size={16}/>
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center flex-1 py-20 text-gray-400">
+            <Loader2 size={24} className="animate-spin"/>
+          </div>
+        ) : req ? (
+          <div className="flex-1 px-6 py-5 space-y-6 overflow-y-auto">
+
+            {/* ── Workflow progress stepper ─────────────────────────────── */}
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3">Workflow Progress</p>
+              <div className="flex items-start gap-0">
+                {WORKFLOW_STEPS.filter(s => !["REVIEW","DELIVERED"].includes(s.key)).map((step, i, arr) => {
+                  const Icon   = step.icon;
+                  const done   = stepIndex > i;
+                  const active = stepIndex === i;
+                  const isLast = i === arr.length - 1;
+                  return (
+                    <div key={step.key} className="flex items-center flex-1 min-w-0">
+                      <div className="flex flex-col items-center">
+                        <div className={cn(
+                          "w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all",
+                          done   ? "bg-green-500 border-green-500 text-white" :
+                          active ? "bg-indigo-600 border-indigo-600 text-white ring-4 ring-indigo-100 dark:ring-indigo-900" :
+                                   "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400"
+                        )}>
+                          {done ? <Check size={14}/> : <Icon size={13}/>}
+                        </div>
+                        <span className={cn(
+                          "text-[9px] font-semibold mt-1 text-center leading-tight max-w-[56px]",
+                          active ? "text-indigo-600 dark:text-indigo-400" :
+                          done   ? "text-green-600 dark:text-green-400" : "text-gray-400"
+                        )}>{step.label}</span>
+                      </div>
+                      {!isLast && (
+                        <div className={cn(
+                          "flex-1 h-0.5 mb-5 mx-1",
+                          done ? "bg-green-400" : "bg-gray-200 dark:bg-gray-700"
+                        )}/>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ── Quick status update ───────────────────────────────────── */}
+            {nextStatuses.length > 0 && (
+              <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-xl p-4">
+                <p className="text-xs font-bold text-indigo-700 dark:text-indigo-300 mb-2 flex items-center gap-1.5">
+                  <Flag size={12}/> Move Status
+                </p>
+                <div className="flex gap-2">
+                  <select
+                    value={statusAction}
+                    onChange={e => setStatusAction(e.target.value)}
+                    className="flex-1 border border-indigo-200 dark:border-indigo-700 dark:bg-gray-800 dark:text-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none bg-white"
+                  >
+                    <option value="">Select next status…</option>
+                    {nextStatuses.map(s => (
+                      <option key={s} value={s}>{STATUS_LABELS[s] ?? s}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleStatusUpdate}
+                    disabled={!statusAction || updatingStatus}
+                    className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium"
+                  >
+                    {updatingStatus ? <Loader2 size={14} className="animate-spin"/> : "Update"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── POC Management ────────────────────────────────────────── */}
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                <Users size={11}/> Points of Contact
+              </p>
+
+              {/* Current POCs */}
+              {(req.pocs ?? []).length === 0 ? (
+                <p className="text-xs text-gray-400 mb-3">No POCs assigned yet.</p>
+              ) : (
+                <div className="space-y-1.5 mb-3">
+                  {(req.pocs ?? []).map(poc => (
+                    <div key={poc.id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", POC_ROLE_COLORS[poc.role])}>
+                          {POC_ROLE_LABELS[poc.role]}
+                        </span>
+                        <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{poc.user.name}</span>
+                        {poc.user.department && (
+                          <span className="text-xs text-gray-400">· {poc.user.department}</span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleRemovePOC(poc.userId)}
+                        className="text-gray-300 hover:text-red-400 transition-colors"
+                      >
+                        <X size={13}/>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add POC */}
+              <div className="flex gap-2">
+                <select
+                  value={pocRole}
+                  onChange={e => setPocRole(e.target.value as any)}
+                  className="border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none bg-white"
+                >
+                  <option value="SOCIAL">Social POC</option>
+                  <option value="DESIGN">Design POC</option>
+                  <option value="OTHER">Other POC</option>
+                </select>
+                <select
+                  value={pocUserId}
+                  onChange={e => setPocUserId(e.target.value)}
+                  className="flex-1 border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none bg-white"
+                >
+                  <option value="">Add person as POC…</option>
+                  {availableUsers.map(u => (
+                    <option key={u.id} value={u.id}>{u.name}{u.department ? ` (${u.department})` : ""}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleAddPOC}
+                  disabled={!pocUserId || addingPOC}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-800 dark:bg-gray-700 hover:bg-gray-700 disabled:opacity-50 text-white text-xs font-medium"
+                >
+                  {addingPOC ? <Loader2 size={12} className="animate-spin"/> : <><UserPlus size={12}/> Add</>}
+                </button>
+              </div>
+            </div>
+
+            {/* ── Review Panel (for IN_REVIEW / DESIGNER_DONE) ──────────── */}
+            {["DESIGNER_DONE", "IN_REVIEW"].includes(req.status) && (
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+                <p className="text-xs font-bold text-amber-700 dark:text-amber-300 mb-1 flex items-center gap-1.5">
+                  <ShieldCheck size={13}/> Review this work
+                </p>
+                <p className="text-xs text-amber-600 dark:text-amber-400 mb-3">
+                  {req.status === "DESIGNER_DONE"
+                    ? "The designer has marked this as done. Review the work and approve or request changes."
+                    : "This is currently in review. Submit your decision below."}
+                </p>
+                <textarea
+                  value={reviewNote}
+                  onChange={e => setReviewNote(e.target.value)}
+                  placeholder="Add feedback or notes (required if requesting changes)…"
+                  rows={3}
+                  className="w-full border border-amber-200 dark:border-amber-700 dark:bg-gray-800 dark:text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white mb-3 resize-none"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleReview("CHANGES_REQUESTED")}
+                    disabled={submitting || !reviewNote.trim()}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg border-2 border-orange-300 dark:border-orange-700 text-orange-600 dark:text-orange-400 font-semibold text-sm hover:bg-orange-50 dark:hover:bg-orange-900/20 disabled:opacity-40 transition-colors"
+                  >
+                    <RotateCcw size={14}/> Request Changes
+                  </button>
+                  <button
+                    onClick={() => handleReview("APPROVED")}
+                    disabled={submitting}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-semibold text-sm transition-colors"
+                  >
+                    <ThumbsUp size={14}/> Approve
+                  </button>
+                </div>
+                {submitting && <p className="text-xs text-center text-gray-400 mt-2">Submitting…</p>}
+              </div>
+            )}
+
+            {/* ── Review Cycle History ──────────────────────────────────── */}
+            {(req.reviewCycles ?? []).length > 0 && (
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                  <Milestone size={11}/> Review History ({req.reviewCycles!.length} cycle{req.reviewCycles!.length > 1 ? "s" : ""})
+                </p>
+                <div className="space-y-2">
+                  {req.reviewCycles!.map(cycle => (
+                    <div key={cycle.id} className={cn(
+                      "rounded-lg px-3 py-2.5 border-l-2",
+                      cycle.action === "APPROVED"
+                        ? "bg-green-50 dark:bg-green-900/20 border-green-400"
+                        : "bg-orange-50 dark:bg-orange-900/20 border-orange-400"
+                    )}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          {cycle.action === "APPROVED"
+                            ? <ThumbsUp size={12} className="text-green-600"/>
+                            : <RotateCcw size={12} className="text-orange-600"/>}
+                          <span className={cn(
+                            "text-xs font-bold",
+                            cycle.action === "APPROVED" ? "text-green-700 dark:text-green-400" : "text-orange-700 dark:text-orange-400"
+                          )}>
+                            {cycle.action === "APPROVED" ? "Approved" : "Changes Requested"}
+                          </span>
+                          <span className="text-[10px] text-gray-400">— Cycle {cycle.cycleNumber}</span>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-medium text-gray-700 dark:text-gray-300">{cycle.reviewedBy.name}</p>
+                          <p className="text-[10px] text-gray-400">{format(parseISO(cycle.createdAt), "d MMM, h:mm a")}</p>
+                        </div>
+                      </div>
+                      {cycle.note && (
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1.5 italic">"{cycle.note}"</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Timeline / Notes ─────────────────────────────────────── */}
+            {(req.notes ?? []).length > 0 && (
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                  <MessageSquare size={11}/> Activity Log
+                </p>
+                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                  {[...(req.notes ?? [])].reverse().map(note => (
+                    <div key={note.id} className={cn(
+                      "text-xs px-3 py-2 rounded-lg",
+                      note.isSystem
+                        ? "bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
+                        : "bg-indigo-50 dark:bg-indigo-900/20 text-indigo-800 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800"
+                    )}>
+                      <div className="flex items-center justify-between gap-2">
+                        <p>{note.body}</p>
+                        <span className="text-[10px] text-gray-400 shrink-0">
+                          {format(parseISO(note.createdAt), "d MMM")}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Key timestamps ────────────────────────────────────────── */}
+            <div className="text-xs text-gray-400 space-y-0.5 border-t border-gray-100 dark:border-gray-700 pt-4">
+              <p>Submitted: {format(parseISO(req.submittedAt), "d MMM yyyy, h:mm a")}</p>
+              {req.designerDoneAt && <p>Designer Done: {format(parseISO(req.designerDoneAt), "d MMM yyyy, h:mm a")}</p>}
+              {req.changesRequestedAt && <p>Last Changes Requested: {format(parseISO(req.changesRequestedAt), "d MMM yyyy, h:mm a")}</p>}
+              {req.approvedAt && <p>Approved: {format(parseISO(req.approvedAt), "d MMM yyyy, h:mm a")}</p>}
+              {req.finalDoneAt && <p>Final Done: {format(parseISO(req.finalDoneAt), "d MMM yyyy, h:mm a")}</p>}
+              {req.tatHours && <p>TAT: <span className="font-medium text-gray-600 dark:text-gray-300">{req.tatHours}h</span></p>}
+              {(req.reviewCycleCount ?? 0) > 0 && <p>Review cycles: {req.reviewCycleCount}</p>}
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center flex-1 py-20 text-sm text-red-400">Request not found.</div>
+        )}
       </div>
     </div>
   );

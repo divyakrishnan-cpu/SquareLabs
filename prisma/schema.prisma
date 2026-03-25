@@ -38,6 +38,8 @@ model User {
   designRequestsMade   DesignRequest[]       @relation("RequestedByUser")
   designRequestsOwned  DesignRequest[]       @relation("AssignedDesigner")
   designDailyLogs      DesignDailyLog[]
+  designPOCEntries     DesignRequestPOC[]    @relation("DesignPOCs")
+  reviewCyclesGiven    DesignReviewCycle[]   @relation("ReviewCycles")
 
   @@map("users")
 }
@@ -587,12 +589,29 @@ enum DesignRequestType {
 }
 
 enum DesignRequestStatus {
-  NEW          // Submitted, awaiting assignment
-  ASSIGNED     // Assigned to a designer, not yet started
-  IN_PROGRESS  // Designer actively working
-  REVIEW       // Submitted for review by requester/lead
-  DELIVERED    // Approved and delivered ✅
+  NEW                // Submitted, awaiting assignment
+  ASSIGNED           // Assigned to a designer, not yet started
+  IN_PROGRESS        // Designer actively working
+  DESIGNER_DONE      // Designer marked as done — awaiting review by POC(s)
+  IN_REVIEW          // POC is actively reviewing
+  CHANGES_REQUESTED  // POC rejected — sent back to designer for changes
+  APPROVED           // POC approved the work
+  FINAL_DONE         // All done: work complete + review accepted + all changes addressed ✅
+  // Legacy statuses kept for backward compat
+  REVIEW             // Old "Submitted for review" (maps to IN_REVIEW)
+  DELIVERED          // Old "Approved and delivered" (maps to FINAL_DONE)
   CANCELLED
+}
+
+enum POCRole {
+  DESIGN  // Design team POC
+  SOCIAL  // Social / marketing team POC
+  OTHER   // Any other stakeholder
+}
+
+enum ReviewAction {
+  APPROVED           // POC approved the output
+  CHANGES_REQUESTED  // POC requested changes — sends back to designer
 }
 
 enum RequestingTeam {
@@ -632,31 +651,73 @@ model DesignRequest {
 
   // People
   requestedById   String?              // User who submitted (if logged in)
-  assignedToId    String?              // Designer assigned
+  assignedToId    String?              // Primary designer assigned
 
   // TAT timestamps
-  submittedAt     DateTime             @default(now())
-  assignedAt      DateTime?
-  startedAt       DateTime?
-  reviewAt        DateTime?
-  deliveredAt     DateTime?
+  submittedAt       DateTime             @default(now())
+  assignedAt        DateTime?
+  startedAt         DateTime?
+  designerDoneAt    DateTime?            // When designer first marked as done
+  reviewAt          DateTime?            // When review first started (legacy compat)
+  changesRequestedAt DateTime?           // When last change request was made
+  approvedAt        DateTime?            // When work was approved
+  finalDoneAt       DateTime?            // When fully signed off
+  deliveredAt       DateTime?            // Legacy compat
 
-  // TAT in hours (computed on delivery)
-  tatHours        Float?
+  // TAT in hours (computed on final completion)
+  tatHours          Float?
 
-  // Revision tracking
-  revisionCount   Int                  @default(0)
-  revisionNote    String?              @db.Text
+  // Review cycle tracking
+  revisionCount     Int                  @default(0)   // Legacy: number of revisions
+  revisionNote      String?              @db.Text       // Legacy: last revision note
+  reviewCycleCount  Int                  @default(0)   // How many approve/reject cycles
 
   // Relations
   requestedBy     User?                @relation("RequestedByUser", fields: [requestedById], references: [id])
   assignedTo      User?                @relation("AssignedDesigner", fields: [assignedToId], references: [id])
   notes           DesignRequestNote[]
+  pocs            DesignRequestPOC[]
+  reviewCycles    DesignReviewCycle[]
 
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 
   @@map("design_requests")
+}
+
+// ── POC (Points of Contact) for each design request ────────────────────────
+// Multiple POCs per request, each with a role (Design / Social / Other).
+// Any POC can review and approve/reject when designer marks done.
+
+model DesignRequestPOC {
+  id        String   @id @default(cuid())
+  requestId String
+  userId    String
+  role      POCRole  @default(OTHER)
+  addedAt   DateTime @default(now())
+
+  request   DesignRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user      User          @relation("DesignPOCs", fields: [userId], references: [id])
+
+  @@unique([requestId, userId])  // one entry per user per request
+  @@map("design_request_pocs")
+}
+
+// ── Review cycles: each approve / change-request action by a POC ────────────
+
+model DesignReviewCycle {
+  id           String        @id @default(cuid())
+  requestId    String
+  reviewedById String
+  action       ReviewAction
+  note         String?       @db.Text // reviewer's feedback / reason
+  cycleNumber  Int           // 1, 2, 3… increments each cycle
+  createdAt    DateTime      @default(now())
+
+  request      DesignRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  reviewedBy   User          @relation("ReviewCycles", fields: [reviewedById], references: [id])
+
+  @@map("design_review_cycles")
 }
 
 model DesignRequestNote {
