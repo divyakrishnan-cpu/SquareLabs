@@ -183,16 +183,32 @@ async function fetchInstagramPosts(
   from:  string,
   to:    string,
 ): Promise<PostPerformance[]> {
-  // Fetch media list — no nested insights here (URL-encoding breaks the syntax).
+  // ── Field expansion strategy ────────────────────────────────────────────────
   //
-  // IMPORTANT: video_views is requested as a DIRECT MEDIA FIELD, not via the
-  // insights endpoint.  The insights endpoint's "video_views" metric fails for
-  // Reels (HTTP 400).  The direct field bypasses that restriction entirely and
-  // returns the total play/view count without needing any special period param.
-  // Similarly, like_count and comments_count are direct fields that don't hit
-  // the insights API at all.
-  const FIELDS = "id,media_type,media_product_type,timestamp,like_count,comments_count,video_views,permalink,thumbnail_url,media_url,caption";
+  // We embed "insights.metric(plays)" directly in the media list request using
+  // Instagram's field expansion syntax.  Node.js fetch does NOT percent-encode
+  // parentheses ( ) in query strings (per WHATWG URL spec — only { } get
+  // encoded), so Instagram receives the literal string and returns plays data
+  // inline.  This completely sidesteps the /{media-id}/insights endpoint which
+  // consistently returns HTTP 400 for Reels when plays/impressions are requested
+  // as separate calls.
+  //
+  // video_views is also requested as a direct media field (backup) — it works
+  // for regular Feed videos; for Reels it may be null/0 but costs nothing extra.
+  //
+  // NOTE: We intentionally omit {name,values,total_value} subfield selectors
+  // because { } braces DO get encoded by Node.js URL parsing.  Instagram returns
+  // the default insight subfields (name + values + total_value) when no selector
+  // is given, and our insightVal() handles both shapes.
+  const FIELDS = "id,media_type,media_product_type,timestamp,like_count,comments_count,video_views,insights.metric(plays),permalink,thumbnail_url,media_url,caption";
   const MAX_POSTS = 30;
+
+  type InsightDataEntry = {
+    name:         string;
+    period?:      string;
+    total_value?: { value: number };
+    values?:      Array<{ value: number; end_time?: string }>;
+  };
 
   type RawMedia = {
     id:                  string;
@@ -201,7 +217,10 @@ async function fetchInstagramPosts(
     timestamp:           string;
     like_count?:         number;
     comments_count?:     number;
-    video_views?:        number;          // ← direct field: total plays/views (works for Reels)
+    video_views?:        number;          // direct field — works for Feed videos
+    insights?: {                          // inline field expansion for plays
+      data?: InsightDataEntry[];
+    };
     permalink:           string;
     thumbnail_url?:      string;
     media_url?:          string;
@@ -255,17 +274,20 @@ async function fetchInstagramPosts(
       const likes          = m.like_count     ?? 0;
       const comments       = m.comments_count ?? 0;
 
-      // video_views from the direct media field is the most reliable view count.
-      // It returns the same number Instagram shows in the app (organic + paid)
-      // without requiring any insights-API permissions or period parameters.
-      // Fall back to whatever the insights API returned if the field is absent.
+      // ── View / plays count ─────────────────────────────────────────────────
+      // Priority order (first non-zero wins):
+      // 1. Inline plays from field expansion in the media list call (most reliable)
+      // 2. video_views direct field (works for regular Feed videos, not Reels)
+      // 3. plays / videoViews from the separate insights API calls (last resort)
+      const playsEntry     = m.insights?.data?.find(d => d.name === "plays");
+      const inlinePlays    = playsEntry?.total_value?.value ?? playsEntry?.values?.[0]?.value ?? 0;
       const directViews    = m.video_views ?? 0;
       const insightViews   = Math.max(ins.plays, ins.videoViews);
-      const finalViews     = directViews || insightViews; // prefer direct field
+      const finalViews     = inlinePlays || directViews || insightViews;
 
-      // For impressions, use the insights value if available; otherwise use
-      // video_views as the best proxy (same number Instagram reports in-app).
-      const finalImp       = ins.impressions || directViews;
+      // For impressions: inline plays is the best proxy for Reels (Instagram
+      // removed the impressions metric for Reels; plays is what they show in-app).
+      const finalImp       = ins.impressions || inlinePlays || directViews;
 
       // Display type: use product type when known, else fall back to media_type
       const displayType    = isReel ? "REEL"
