@@ -7,6 +7,7 @@ import {
   Clock, AlertTriangle, CheckCircle2, TrendingUp, TrendingDown,
   Filter, ChevronDown, X, Edit2, Eye, Loader2, ArrowUpRight, Check,
   Inbox, Users, Zap, Timer, Target, FileText,
+  Download, Upload, FileUp, CheckCheck, SkipForward, XCircle,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -527,14 +528,174 @@ function RequestsTab({ requests, loading, onRefresh, onNew }: {
 // ── CALENDAR TAB (shell — reuse existing logic) ───────────────────────────
 
 function CalendarTab() {
+  const [dragging,     setDragging]     = useState(false);
+  const [file,         setFile]         = useState<File | null>(null);
+  const [importing,    setImporting]    = useState(false);
+  const [result,       setResult]       = useState<{
+    summary: { total: number; created: number; skipped: number; errors: number };
+    results: { row: number; title: string; status: "created"|"skipped"|"error"; reason?: string }[];
+  } | null>(null);
+  const [importError,  setImportError]  = useState("");
+
+  function handleFiles(files: FileList | null) {
+    if (!files?.length) return;
+    const f = files[0];
+    if (!f.name.match(/\.(xlsx?|csv)$/i)) {
+      setImportError("Please upload an .xlsx or .csv file.");
+      return;
+    }
+    setFile(f);
+    setResult(null);
+    setImportError("");
+  }
+
+  async function doImport() {
+    if (!file) return;
+    setImporting(true);
+    setImportError("");
+    setResult(null);
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const res = await fetch("/api/design-ops/calendar/import", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) { setImportError(data.error ?? "Import failed"); return; }
+      setResult(data);
+    } catch (e: any) {
+      setImportError(e.message ?? "Network error");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function downloadTemplate() {
+    window.open("/api/design-ops/calendar/template", "_blank");
+  }
+
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-8 text-center">
-      <CalendarDays size={32} className="mx-auto text-indigo-400 mb-3"/>
-      <p className="font-semibold text-gray-700 dark:text-gray-200">Content Calendar</p>
-      <p className="text-sm text-gray-400 mt-1 mb-4">Full calendar moved here from Social — coming in next update.</p>
-      <a href="/social/calendar" className="inline-flex items-center gap-1.5 text-sm text-indigo-600 hover:underline font-medium">
-        Open current calendar <ArrowUpRight size={14}/>
-      </a>
+    <div className="space-y-5">
+      {/* Header row */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100">Import Content Calendar</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Upload an XLSX or CSV to bulk-add calendar entries</p>
+        </div>
+        <button
+          onClick={downloadTemplate}
+          className="inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50 transition-colors border border-indigo-200 dark:border-indigo-700"
+        >
+          <Download size={15}/> Download Template
+        </button>
+      </div>
+
+      {/* Drop zone */}
+      <div
+        onDragOver={e => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={e => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files); }}
+        className={cn(
+          "border-2 border-dashed rounded-2xl p-10 text-center transition-colors cursor-pointer",
+          dragging
+            ? "border-indigo-400 bg-indigo-50 dark:bg-indigo-900/20"
+            : file
+            ? "border-green-300 bg-green-50 dark:bg-green-900/10"
+            : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-indigo-300 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/10"
+        )}
+        onClick={() => {
+          const inp = document.createElement("input");
+          inp.type = "file";
+          inp.accept = ".xlsx,.xls,.csv";
+          inp.onchange = (e) => handleFiles((e.target as HTMLInputElement).files);
+          inp.click();
+        }}
+      >
+        {file ? (
+          <>
+            <FileUp size={32} className="mx-auto text-green-500 mb-2"/>
+            <p className="font-medium text-gray-800 dark:text-gray-200">{file.name}</p>
+            <p className="text-sm text-gray-400 mt-1">{(file.size / 1024).toFixed(1)} KB · click to change</p>
+          </>
+        ) : (
+          <>
+            <Upload size={32} className="mx-auto text-gray-300 dark:text-gray-600 mb-2"/>
+            <p className="font-medium text-gray-600 dark:text-gray-300">Drag & drop your file here</p>
+            <p className="text-sm text-gray-400 mt-1">or click to browse · .xlsx or .csv</p>
+          </>
+        )}
+      </div>
+
+      {/* Error */}
+      {importError && (
+        <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3">
+          <AlertTriangle size={15} className="shrink-0 mt-0.5"/> {importError}
+        </div>
+      )}
+
+      {/* Import button */}
+      {file && !result && (
+        <button
+          onClick={doImport}
+          disabled={importing}
+          className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg disabled:opacity-60 transition-colors shadow-sm"
+        >
+          {importing ? <Loader2 size={15} className="animate-spin"/> : <FileUp size={15}/>}
+          {importing ? "Importing…" : "Import Now"}
+        </button>
+      )}
+
+      {/* Results */}
+      {result && (
+        <div className="space-y-4">
+          {/* Summary chips */}
+          <div className="flex flex-wrap gap-3">
+            <div className="flex items-center gap-2 px-4 py-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl text-sm font-medium text-green-700 dark:text-green-400">
+              <CheckCheck size={15}/> {result.summary.created} created
+            </div>
+            <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-sm font-medium text-amber-700 dark:text-amber-400">
+              <SkipForward size={15}/> {result.summary.skipped} skipped
+            </div>
+            {result.summary.errors > 0 && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm font-medium text-red-700 dark:text-red-400">
+                <XCircle size={15}/> {result.summary.errors} errors
+              </div>
+            )}
+          </div>
+
+          {/* Row-level results */}
+          {result.results.length > 0 && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700 max-h-72 overflow-y-auto">
+              {result.results.map((r, i) => (
+                <div key={i} className="flex items-start gap-3 px-4 py-2.5 text-sm">
+                  <span className="text-xs text-gray-400 w-8 shrink-0 pt-0.5">r{r.row}</span>
+                  {r.status === "created"
+                    ? <CheckCircle2 size={14} className="shrink-0 text-green-500 mt-0.5"/>
+                    : r.status === "skipped"
+                    ? <SkipForward  size={14} className="shrink-0 text-amber-400 mt-0.5"/>
+                    : <XCircle      size={14} className="shrink-0 text-red-500 mt-0.5"/>}
+                  <span className="flex-1 text-gray-700 dark:text-gray-300 truncate">{r.title}</span>
+                  {r.reason && <span className="text-xs text-gray-400 shrink-0 ml-2">{r.reason}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Import another */}
+          <button
+            onClick={() => { setFile(null); setResult(null); setImportError(""); }}
+            className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
+          >
+            Import another file
+          </button>
+        </div>
+      )}
+
+      {/* Link to live calendar */}
+      <div className="flex items-center gap-2 text-sm text-gray-400 pt-1">
+        <CalendarDays size={13}/>
+        <a href="/social/calendar" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+          View the live content calendar <ArrowUpRight size={12} className="inline"/>
+        </a>
+      </div>
     </div>
   );
 }

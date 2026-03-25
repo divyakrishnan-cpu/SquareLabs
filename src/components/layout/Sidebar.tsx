@@ -30,7 +30,7 @@ const NAV: NavGroup[] = [
   {
     label: "Design Ops", icon: Clapperboard, section: "DESIGN_OPS",
     children: [
-      { label: "Request Tracker", href: "/design-ops", icon: Clapperboard, section: "DESIGN_OPS" },
+      { label: "Design Hub", href: "/design-ops", icon: Clapperboard, section: "DESIGN_OPS" },
     ],
   },
   {
