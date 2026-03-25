@@ -276,6 +276,17 @@ async function fetchDemographics(igId: string, token: string) {
 }
 
 // ── Media stats (posts, interactions) ────────────────────────────────────
+//
+// Paginates through ALL media using Meta's cursor-based paging so we never
+// miss posts when the date range contains more than 100 items.
+// Stops early once the oldest post on a page predates `since` — safe because
+// Meta returns posts in reverse chronological order.
+
+type RawMedia = {
+  id: string; caption?: string; media_type: string; permalink: string;
+  timestamp: string; like_count: number; comments_count: number;
+  thumbnail_url?: string; media_url?: string;
+};
 
 async function fetchMediaStats(
   igId:  string,
@@ -283,56 +294,67 @@ async function fetchMediaStats(
   since: Date,
   until: Date,
 ) {
+  const sinceStr = since.toISOString().split("T")[0];
+  const untilStr = until.toISOString().split("T")[0];
+
+  let total = 0, video = 0, image = 0, carousel = 0,
+      interactions = 0, mediaLikes = 0, mediaComments = 0;
+  const allInRange: RawMedia[] = [];
+
+  const FIELDS = "id,media_type,timestamp,like_count,comments_count,permalink,thumbnail_url,media_url,caption";
+  const MAX_PAGES = 100; // safety cap: 100 pages × 100 = up to 10 000 posts
+
+  let nextUrl: string | null =
+    `${META}/${igId}/media?fields=${FIELDS}&limit=100&access_token=${token}`;
+
   try {
-    const res  = await fetch(
-      `${META}/${igId}/media?fields=id,media_type,timestamp,like_count,comments_count,permalink,thumbnail_url,media_url,caption&limit=100&access_token=${token}`
-    );
-    const data = await res.json();
-    if (data.error) return { total: 0, video: 0, image: 0, carousel: 0, interactions: 0, likes: 0, comments: 0, topMedia: [] };
+    for (let page = 0; page < MAX_PAGES && nextUrl; page++) {
+      const res  = await fetch(nextUrl);
+      const data: { data?: RawMedia[]; paging?: { next?: string }; error?: { message: string } } = await res.json();
 
-    const sinceStr = since.toISOString().split("T")[0];
-    const untilStr = until.toISOString().split("T")[0];
+      if (data.error || !data.data?.length) break;
 
-    const inRange = (data.data ?? []).filter((m: { timestamp: string }) => {
-      const d = m.timestamp.split("T")[0];
-      return d >= sinceStr && d <= untilStr;
-    });
+      const posts = data.data;
 
-    let video = 0, image = 0, carousel = 0, interactions = 0, mediaLikes = 0, mediaComments = 0;
-    for (const m of inRange) {
-      const type = m.media_type?.toUpperCase() ?? "";
-      if (type === "VIDEO" || type === "REEL") video++;
-      else if (type === "CAROUSEL_ALBUM")      carousel++;
-      else image++;
-      mediaLikes    += (m.like_count     || 0);
-      mediaComments += (m.comments_count || 0);
-      interactions  += (m.like_count || 0) + (m.comments_count || 0);
+      for (const m of posts) {
+        const d = m.timestamp.split("T")[0];
+        if (d >= sinceStr && d <= untilStr) {
+          const type = (m.media_type ?? "").toUpperCase();
+          if (type === "VIDEO" || type === "REEL") video++;
+          else if (type === "CAROUSEL_ALBUM")      carousel++;
+          else                                     image++;
+          total++;
+          mediaLikes    += (m.like_count     || 0);
+          mediaComments += (m.comments_count || 0);
+          interactions  += (m.like_count || 0) + (m.comments_count || 0);
+          allInRange.push(m);
+        }
+      }
+
+      // Posts are newest-first; stop paginating once we're past the start date
+      const oldestOnPage = posts[posts.length - 1];
+      if (oldestOnPage.timestamp.split("T")[0] < sinceStr) break;
+
+      nextUrl = data.paging?.next ?? null;
     }
+  } catch { /* return whatever we collected */ }
 
-    const topMedia = [...inRange]
-      .sort((a: { like_count: number; comments_count: number }, b: { like_count: number; comments_count: number }) =>
-        (b.like_count + b.comments_count) - (a.like_count + a.comments_count))
-      .slice(0, 9)
-      .map((m: {
-        id: string; caption?: string; media_type: string; permalink: string;
-        timestamp: string; like_count: number; comments_count: number;
-        thumbnail_url?: string; media_url?: string;
-      }) => ({
-        id:        m.id,
-        caption:   (m.caption ?? "").slice(0, 180),
-        mediaType: m.media_type,
-        permalink: m.permalink,
-        thumbnail: m.thumbnail_url || m.media_url || null,
-        timestamp: m.timestamp,
-        date:      m.timestamp.split("T")[0],
-        likes:     m.like_count     || 0,
-        comments:  m.comments_count || 0,
-      }));
+  const topMedia = [...allInRange]
+    .sort((a, b) => (b.like_count + b.comments_count) - (a.like_count + a.comments_count))
+    .slice(0, 9)
+    .map(m => ({
+      id:        m.id,
+      caption:   (m.caption ?? "").slice(0, 180),
+      mediaType: m.media_type,
+      permalink: m.permalink,
+      thumbnail: m.thumbnail_url || m.media_url || null,
+      timestamp: m.timestamp,
+      date:      m.timestamp.split("T")[0],
+      likes:     m.like_count     || 0,
+      comments:  m.comments_count || 0,
+    }));
 
-    return { total: inRange.length, video, image, carousel, interactions, likes: mediaLikes, comments: mediaComments, topMedia };
-  } catch {
-    return { total: 0, video: 0, image: 0, carousel: 0, interactions: 0, likes: 0, comments: 0, topMedia: [] };
-  }
+  return { total, video, image, carousel, interactions, likes: mediaLikes, comments: mediaComments, topMedia };
 }
 
 // ── Build totals from insights + media ───────────────────────────────────

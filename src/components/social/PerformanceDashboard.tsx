@@ -382,6 +382,8 @@ export function PerformanceDashboard() {
   const [reports,    setReports]    = useState<MonthlyReport[]>([]);
   const [loading,    setLoading]    = useState(false);
   const [showModal,  setShowModal]  = useState(false);
+  const [syncing,    setSyncing]    = useState(false);
+  const [syncMsg,    setSyncMsg]    = useState("");
 
   const canLog = CAN_LOG_ROLES.has((session?.user as any)?.role ?? "");
 
@@ -397,6 +399,32 @@ export function PerformanceDashboard() {
   }, [vertical, selYear]);
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
+
+  // ── Sync from connected platforms ──
+  const syncFromPlatforms = useCallback(async () => {
+    setSyncing(true);
+    setSyncMsg("");
+    try {
+      const res  = await fetch("/api/social/sync/monthly", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vertical, year: selYear, month: selMonth }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setSyncMsg(`Error: ${data.error ?? "sync failed"}`); return; }
+      const s = data.summary;
+      setSyncMsg(s.synced > 0
+        ? `✓ Synced ${s.synced} vertical${s.synced > 1 ? "s" : ""} · ${MONTHS[selMonth-1]} ${selYear}`
+        : `No connected accounts found for ${MONTHS[selMonth-1]} ${selYear}`
+      );
+      fetchReports();
+    } catch (e: any) {
+      setSyncMsg(`Network error: ${e.message}`);
+    } finally {
+      setSyncing(false);
+      setTimeout(() => setSyncMsg(""), 6000);
+    }
+  }, [vertical, selYear, selMonth, fetchReports]);
 
   // ── Derived state ──
   const currentReport  = reports.find(r => r.month === selMonth) ?? null;
@@ -469,7 +497,33 @@ export function PerformanceDashboard() {
           })}
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {/* Sync status message */}
+          {syncMsg && (
+            <span className={cn(
+              "text-xs px-2.5 py-1 rounded-full border font-medium",
+              syncMsg.startsWith("✓")
+                ? "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800"
+                : "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800"
+            )}>
+              {syncMsg}
+            </span>
+          )}
+
+          {/* Sync from platforms */}
+          {canLog && (
+            <button
+              onClick={syncFromPlatforms}
+              disabled={syncing}
+              title="Fetch latest metrics from connected Instagram, Facebook, LinkedIn & YouTube"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-700 rounded-lg disabled:opacity-60 transition-colors"
+            >
+              <RefreshCw size={13} className={syncing ? "animate-spin" : ""}/>
+              {syncing ? "Syncing…" : "Sync from Platforms"}
+            </button>
+          )}
+
+          {/* Manual log */}
           {canLog && (
             <button
               onClick={() => setShowModal(true)}
@@ -478,6 +532,7 @@ export function PerformanceDashboard() {
               <PenLine size={13}/> Log Month Data
             </button>
           )}
+
           <button
             onClick={fetchReports}
             className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-gray-300 transition-colors"
