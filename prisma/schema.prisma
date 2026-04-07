@@ -740,7 +740,7 @@ model DesignRequestPOC {
   id        String   @id @default(cuid())
   requestId String
   userId    String
-  role      POCRole  @default(OTHER)
+  role      POCRole  @default(DESIGN)
   addedAt   DateTime @default(now())
 
   request   DesignRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
