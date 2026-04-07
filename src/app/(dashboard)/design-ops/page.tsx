@@ -106,7 +106,17 @@ const REQUESTING_TEAMS: Record<string, string> = {
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface POCUser { id: string; name: string; email: string; image?: string; department?: string }
+interface POCUser { id: string; name: string; email: string; image?: string; department?: string | null }
+
+// Teams whose members appear in each POC role dropdown
+const DESIGN_TEAMS   = ["Design", "Branding"];
+const VIDEO_TEAMS    = ["Video"];
+const SOCIAL_TEAMS   = ["Socials"];
+const CONTENT_TEAMS  = ["Content"];
+
+function byTeams(users: POCUser[], teams: string[]) {
+  return users.filter(u => u.department && teams.includes(u.department));
+}
 interface POC     { id: string; userId: string; role: string; user: POCUser }
 interface Note    { id: string; body: string; isSystem: boolean; createdAt: string; authorId?: string }
 interface ReviewCycle { id: string; cycleNumber: number; action: string; note?: string; createdAt: string; reviewedBy: POCUser }
@@ -325,19 +335,19 @@ function NewRequestModal({
           <div>
             <label className={labelCls}>Points of Contact <span className="text-gray-400 font-normal">(optional — team lead will assign)</span></label>
             <div className="grid grid-cols-2 gap-3">
-              {[
-                { key: "designPocId",    label: "Design POC"    },
-                { key: "videoPocId",     label: "Video POC"     },
-                { key: "contentPocId",   label: "Content POC"   },
-                { key: "socialPocId",    label: "Social POC"    },
-                { key: "uploadingPocId", label: "Uploading POC" },
-              ].map(({ key, label }) => (
+              {([
+                { key: "designPocId",    label: "Design POC",    pool: byTeams(users, DESIGN_TEAMS)  },
+                { key: "videoPocId",     label: "Video POC",     pool: byTeams(users, VIDEO_TEAMS)   },
+                { key: "contentPocId",   label: "Content POC",   pool: byTeams(users, CONTENT_TEAMS) },
+                { key: "socialPocId",    label: "Social POC",    pool: byTeams(users, SOCIAL_TEAMS)  },
+                { key: "uploadingPocId", label: "Uploading POC", pool: users                         },
+              ] as { key: string; label: string; pool: POCUser[] }[]).map(({ key, label, pool }) => (
                 <div key={key}>
                   <label className="block text-xs text-gray-500 mb-1">{label}</label>
                   <select className={inputCls} value={(form as any)[key]} onChange={e => set(key, e.target.value)}>
                     <option value="">— Assign later —</option>
-                    {users.map(u => (
-                      <option key={u.id} value={u.id}>{u.name} {u.department ? `(${u.department})` : ""}</option>
+                    {pool.map(u => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
                     ))}
                   </select>
                 </div>
@@ -417,6 +427,14 @@ function POCSection({
   const roles = ["DESIGN", "VIDEO", "CONTENT", "SOCIAL", "UPLOADING"];
   const [saving, setSaving] = useState<string | null>(null);
 
+  const poolForRole = (role: string): POCUser[] => {
+    if (role === "DESIGN")    return byTeams(users, DESIGN_TEAMS);
+    if (role === "VIDEO")     return byTeams(users, VIDEO_TEAMS);
+    if (role === "SOCIAL")    return byTeams(users, SOCIAL_TEAMS);
+    if (role === "CONTENT")   return byTeams(users, CONTENT_TEAMS);
+    return users; // UPLOADING — any team
+  };
+
   const pocByRole = (role: string) => req.pocs.find(p => p.role === role);
 
   const assign = async (role: string, userId: string) => {
@@ -472,8 +490,8 @@ function POCSection({
                   onChange={e => e.target.value && assign(role, e.target.value)}
                 >
                   <option value="">— Assign {meta.label} —</option>
-                  {users.map(u => (
-                    <option key={u.id} value={u.id}>{u.name}{u.department ? ` (${u.department})` : ""}</option>
+                  {poolForRole(role).map(u => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
                   ))}
                 </select>
                 {busy && <Loader2 size={12} className="animate-spin text-indigo-500" />}
@@ -884,7 +902,7 @@ function DesignOpsInner() {
     setLoading(true);
     const [rr, ur] = await Promise.all([
       fetch("/api/design-ops/requests"),
-      fetch("/api/users?active=1"),
+      fetch("/api/design-ops/designers"),
     ]);
     const [reqs, usrs] = await Promise.all([rr.json(), ur.json()]);
     setRequests(Array.isArray(reqs) ? reqs : []);
