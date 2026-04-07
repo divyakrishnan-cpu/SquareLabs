@@ -55,7 +55,14 @@ for (const name of migrations) {
   runSafe(`npx prisma migrate resolve --applied "${name}"`);
 }
 
-// ── Step 2: run any unapplied migrations (just the new one) ──────────────────
+// ── Step 2: clear any failed state on the new migration ──────────────────────
+// If a previous deploy attempt partially ran the migration and left it in a
+// "failed" state, Prisma will block all subsequent deploys until it's resolved.
+// Marking it as rolled-back allows migrate deploy to retry it cleanly.
+console.log(`\nResolving any failed state on ${NEW_MIGRATION}...`);
+runSafe(`npx prisma migrate resolve --rolled-back "${NEW_MIGRATION}"`);
+
+// ── Step 3: run any unapplied migrations (just the new one) ──────────────────
 console.log('\nRunning prisma migrate deploy...');
 run('npx prisma migrate deploy');
 
